@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- scanner_v1_scanner.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

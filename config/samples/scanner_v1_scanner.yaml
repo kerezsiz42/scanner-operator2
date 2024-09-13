@@ -1,0 +1,9 @@
+apiVersion: scanner.zoltankerezsi.xyz/v1
+kind: Scanner
+metadata:
+  labels:
+    app.kubernetes.io/name: scanner-operator2
+    app.kubernetes.io/managed-by: kustomize
+  name: scanner-sample
+spec:
+  # TODO(user): Add fields here

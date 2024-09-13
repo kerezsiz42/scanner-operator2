@@ -1,0 +1,27 @@
+# permissions for end users to edit scanners.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: scanner-operator2
+    app.kubernetes.io/managed-by: kustomize
+  name: scanner-editor-role
+rules:
+- apiGroups:
+  - scanner.zoltankerezsi.xyz
+  resources:
+  - scanners
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - scanner.zoltankerezsi.xyz
+  resources:
+  - scanners/status
+  verbs:
+  - get
