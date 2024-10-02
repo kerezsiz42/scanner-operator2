@@ -18,6 +18,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,6 +34,7 @@ import (
 type ScannerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Server *http.Server
 }
 
 // +kubebuilder:rbac:groups=scanner.zoltankerezsi.xyz,resources=scanners,verbs=get;list;watch;create;update;patch;delete
@@ -47,9 +51,28 @@ type ScannerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	reconcilerLog := log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	if r.Server == nil {
+		mux := http.NewServeMux()
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := fmt.Fprintf(w, "Hello, world!\n"); err != nil {
+				reconcilerLog.Error(err, "error while handling request")
+				os.Exit(1)
+			}
+		}))
+
+		r.Server = &http.Server{Addr: ":8000", Handler: mux}
+
+		go func() {
+			if err := r.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				reconcilerLog.Error(err, "unable to start HTTP server")
+				os.Exit(1)
+			}
+		}()
+	}
+
+	reconcilerLog.Info("successfully reconciled")
 
 	return ctrl.Result{}, nil
 }

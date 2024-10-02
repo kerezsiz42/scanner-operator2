@@ -6,7 +6,29 @@ In this article I would like to introduce the reader into the realms of cloud na
 
 In order to make this guide more similar the process one would do in reality when meaningful work is needed I would like to concentrate on things that go a bit further than simply achieving a "hello world" type of result.
 
-## Kubernetes and containerization
+## Containerization
+
+Containerization is a lightweight virtualization method that packages applications and their dependencies into self-contained units called containers which enables efficient resource usage, rapid deployment, and easy scaling compared to VMs (virtual machines). The gain over traditional VMs is that the workloads are processes with some lightwight OS (operating system) APIs for compatibility instead of full-blown OSs so this way they share a [common kernel](https://learn.microsoft.com/en-us/virtualization/windowscontainers/about/containers-vs-vm) (of the host OS) which achieves the benefitial properties.
+
+### Kubernetes
+
+It started out as a continuation to [Borg](https://medium.com/containermind/a-new-era-of-container-cluster-management-with-kubernetes-cd0b804e1409) which was Google's original internal Container Cluster Manager which at some point run most of their systems. Kubernetes is nowadays the most used open source container orchestration tool which provides higher level concepts that Docker or other runtimes that conform to [OCI](https://opencontainers.org/) does not have, namely self-healing, manual and automatic horizontal scaling, load balancing and automated rollouts and rollbacks to name a few. Figuratively speaking it's the navigator for Docker containers hence its name means 'steersman' or 'pilot' (grc: κυβερνήτης).
+
+<https://www.paloaltonetworks.com/cyberpedia/containerization>
+<https://kubernetes.io/docs/concepts/overview/#going-back-in-time>
+
+### Cluster
+
+TODO: describe parts
+
+The name, namespace and kind triad uniquely identifies every resource within a cluster.
+
+## Why do we need Operators?
+
+Controllers in Kubernetes are automations that have access to the Kubernetes API and other resources - often outside the cluster - in order to observe the state of the cluster and act on the changes in accordance with the logic they were implemented with. Operators are basically controllers which define a CRD (custom resource defintion), so they are effectively a way to extend the functionality of Kubernetes.
+
+<https://kubernetes.io/docs/concepts/architecture/controller/>
+<https://konghq.com/blog/learning-center/kubernetes-controllers-vs-operators>
 
 ## Initial setup of the project
 
@@ -23,6 +45,13 @@ $ kubectl version
 Client Version: v1.30.4
 Kustomize Version: v5.0.4-0.20230601165947-6ce0bf390ce3
 Server Version: v1.31.0
+```
+
+Furthermore, we will need helm which I will introduce later.
+
+```sh
+$ helm version
+version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132984ab3ab", GitTreeState:"clean", GoVersion:"go1.22.7"}
 ```
 
 Then we download the latest release of Kubebuilder CLI, make it executable and move it into out `/usr/local/bin` where user installed binaries are usually stored.
@@ -75,11 +104,71 @@ Kubernetes control plane is running at https://127.0.0.1:37675
 CoreDNS is running at https://127.0.0.1:37675/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
 ```
 
+## Setting up the Operator and its HTTP API
+
+kubectl api-resources --verbs=list -o name | grep scanner
+
+```go
+func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+ reconcilerLog := log.FromContext(ctx)
+
+  if r.Server == nil {
+    mux := http.NewServeMux()
+    mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+      if _, err := fmt.Fprintf(w, "Hello, world!\n"); err != nil {
+        reconcilerLog.Error(err, "error while handling request")
+        os.Exit(1)
+      }
+    }))
+
+    r.Server = &http.Server{Addr: ":8000", Handler: mux}
+
+    go func() {
+      if err := r.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+        reconcilerLog.Error(err, "unable to start HTTP server")
+        os.Exit(1)
+      }
+    }()
+  }
+
+  reconcilerLog.Info("successfully reconciled")
+
+  return ctrl.Result{}, nil
+}
+```
+
+### Development workflow
+
+```sh
+make docker-build
+kind load docker-image controller:latest
+make install
+make deploy
+kubectl apply -f config/samples/scanner_v1_scanner.yaml
+kubectl port-forward service/scanner-operator2-controller-manager-api-service -n scanner-operator2-system 8000:8000
+curl localhost:8000
+```
+
+### Kustomize
+
+Kustomize is a tool for customizing Kubernetes configurations. It allows us to generate resources from other resources and setting cross-cutting fields for resources along with composing and customizing collections of resources as documented on the official [Kubernetes docs website](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/#overview-of-kustomize). It is used here to make a more concise version of the Kubernetes resource files by minimizing the amount of copied parts thereby simplifing maintenance.
+
+### Helm and Helmify
+
+Helm is today the industry standard package manager for Kubernetes, so we will use this to create our packaged operator that can later be downloaded deployed and undeployed in a Kubernetes namespace similarly to [Istio](https://istio.io/latest/docs/ambient/install/helm/) without the need of the sourcecode and running `make install` and `make deploy` manually on every change.
+
+[Helmify](https://github.com/arttor/helmify) is a tool that creates Helm charts from Kubernetes manifests (the yaml files). When running `make helm` it generates a helm chart in the chart directory of our repository. Our work here consists of copying the right Makefile commands from the documentation and runinning them appropriately when we create a new version of our software.
+
+```Makefile
+helm: manifests kustomize helmify
+  $(KUSTOMIZE) build config/default | $(HELMIFY)
+```
+
 ## Setting up the UI development environment
 
-The UI that we assemble here is considered as the test or proof that the operator does what it has to with a reasonable performance.
+The UI that we assemble here is considered to be the test or proof that the operator does what it has to and with a reasonable performance.
 
-For simplicitys sake, I choosed to develop this UI using React, since the tooling around it is very mature. Also, we will be using Node instead of the newer more modern javascript runtimes like Bun or Deno. These are functionally mostly compatible with Node but there could still be some rough edges or surprizing hardships when you are trying to achieve an exact result.
+For simplicity's sake, I choose to develop this UI using React, since the tooling around it is very mature. Also, we will be using Node instead of the newer more modern javascript runtimes like Bun or Deno. These are functionally mostly compatible with Node but there could still be some rough edges or surprizing hardships when you are trying to achieve an exact result.
 
 Node can also be installed with the preferred version manager like [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm). I will be using the latest release at the time of writing this document.
 
@@ -148,6 +237,15 @@ We also define some script in our `package.json` file to document the steps it t
 }
 ```
 
+The initial UI looks like the following in it's rendered form.
+
+![Initial rendered UI](initial-ui.png)
+
+With all this done we can confirm that with this setup we can develop a modern UI with a fast and easy to understand iteration loop since all components are configured correctly to get the resulting Javascript, CSS and HTML files.
+
+## Idea and Implementation
+
 ## Resources
 
 <https://esbuild.github.io/>
+<https://book.kubebuilder.io/reference/metrics>
