@@ -8,7 +8,7 @@ In order to make this guide more similar the process one would do in reality whe
 
 ## Containerization
 
-Containerization is a lightweight virtualization method that packages applications and their dependencies into self-contained units called containers which enables efficient resource usage, rapid deployment, and easy scaling compared to VMs (virtual machines). The gain over traditional VMs is that the workloads are processes with some lightwight OS (operating system) APIs for compatibility instead of full-blown OSs so this way they share a [common kernel](https://learn.microsoft.com/en-us/virtualization/windowscontainers/about/containers-vs-vm) (of the host OS) which achieves the benefitial properties.
+Containerization is a lightweight virtualization method that packages applications and their dependencies into self-contained units called containers which enables efficient resource usage, rapid deployment, and easy scaling compared to VMs (virtual machines). The gain over traditional VMs is that the workloads are processes with some lightwight OS (operating system) APIs (application programming interfaces) for compatibility instead of full-blown OSs so this way they share a [common kernel](https://learn.microsoft.com/en-us/virtualization/windowscontainers/about/containers-vs-vm) of the host OS which achieves the benefitial properties.
 
 ### Kubernetes
 
@@ -30,7 +30,9 @@ Controllers in Kubernetes are automations that have access to the Kubernetes API
 <https://kubernetes.io/docs/concepts/architecture/controller/>
 <https://konghq.com/blog/learning-center/kubernetes-controllers-vs-operators>
 
-## Initial setup of the project
+## Technical Objectives
+
+## Initial Setup of the Project
 
 First we have to make sure we have the most recent stable version of go and kubectl CLI tools.
 Each operating system has its own way of installing and managing these packages, but if you not need the newest version because of a certain new feature then it's more convenient to just rely upon the package provided by your distribution instead of what a dedicated version manager like [gvm](https://github.com/moovweb/gvm) can provide. As long as the positives don't outweigh the amount of extra work we have to put into managing things, we should go with the default option for simplicity.
@@ -89,14 +91,14 @@ Then we create an API with a group, version and kind name.
 kubebuilder create api --group scanner --version v1 --kind Scanner
 ```
 
-After these steps we will have a scaffold generated in the `internal/controller` folder for us. The two most important methods are the `Reconciler` and the `SetupWithManager` which we will take a more in depth look at later. Also in order to setup a cluster we can use a tool called [kind](https://kind.sigs.k8s.io/) which makes it easy to create a delete Kubernetes clusters and nodes for our development.
+After these steps we will have a scaffold generated in the `internal/controller` folder for us. The two most important methods are the `Reconciler` and the `SetupWithManager` which we will take a more in depth look at later. Also, in order to setup a cluster we can use a tool called [kind](https://kind.sigs.k8s.io/) which makes it easy to create a delete Kubernetes clusters and nodes for our development.
 
 ```sh
 go install sigs.k8s.io/kind@v0.24.0
 kind create cluster
 ```
 
-We can verify if kubectl is configured correctly for this cluster.
+We can verify if `kubectl` is configured correctly for this cluster.
 
 ```sh
 $ kubectl cluster-info --context kind-kind
@@ -106,11 +108,27 @@ CoreDNS is running at https://127.0.0.1:37675/api/v1/namespaces/kube-system/serv
 
 ## Setting up the Operator and its HTTP API
 
-kubectl api-resources --verbs=list -o name | grep scanner
+### Implementing new Logic
+
+We can modify the `ScannerReconciler` structure and its methods to implement our initial testing logic, explore the workings of `kubebuilder` and to get familiar with the development workflow. Firstly, as we will need a separate HTTP API outside the one used for metrics, we can add a `http.Server` field to the `ScannerReconciler` struct which is zero-initialized (which in this case means that it will be `nil` in the begining).
 
 ```go
+// internal/controller/scanner_controller.go
+
+type ScannerReconciler struct {
+  client.Client
+  Scheme *runtime.Scheme
+  Server *http.Server
+}
+```
+
+The Kubebuilder team kindly marked as the place where we should put our code, so we will start the HTTP server there. Here we define a single handler function that return the string `"Hello, world!"` and start the server in a `goroutine`, since `http.Server.ListenAndServe()` is a blocking call. We use `os.Exit(1)` together with `log.Error()` instead of `panic()` the same way as in `cmd/main.go` for failures that make further continuation of the process impossible. We intentionally let the process die, since it will be restarted by Deployment anyway. Also, the convention is to start the error messages with lowercase letters. After the first reconciliation is done the HTTP server should be running on port `8000` and the logs of the controller-manager pod should contain the `"successfully reconciled"` message.
+
+```go
+// internal/controller/scanner_controller.go
+
 func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
- reconcilerLog := log.FromContext(ctx)
+  reconcilerLog := log.FromContext(ctx)
 
   if r.Server == nil {
     mux := http.NewServeMux()
@@ -137,34 +155,110 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 ```
 
-### Development workflow
-
-```sh
-make docker-build
-kind load docker-image controller:latest
-make install
-make deploy
-kubectl apply -f config/samples/scanner_v1_scanner.yaml
-kubectl port-forward service/scanner-operator2-controller-manager-api-service -n scanner-operator2-system 8000:8000
-curl localhost:8000
-```
-
 ### Kustomize
 
-Kustomize is a tool for customizing Kubernetes configurations. It allows us to generate resources from other resources and setting cross-cutting fields for resources along with composing and customizing collections of resources as documented on the official [Kubernetes docs website](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/#overview-of-kustomize). It is used here to make a more concise version of the Kubernetes resource files by minimizing the amount of copied parts thereby simplifing maintenance.
+Kustomize is a tool for customizing Kubernetes configurations. It allows us to generate resources from other resources and setting cross-cutting fields for resources along with composing and customizing collections of resources as documented on the official [Kubernetes docs website](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/#overview-of-kustomize). It is used here to make a more concise version of the Kubernetes resource files by minimizing the amount of copied parts thereby simplifing maintenance. In this project the `config` folder is full of such resource definitions.
+
+TODO: explain default kustomization file
+TODO: explain the new added service
+
+### Development Workflow
+
+We can change the default `imagePullPolicy` from `Always` to `IfNotPresent` implicitly by changing the image tag to `dev` instead of `latest` in our Makefile. Doing this will prevent Kubernetes to always try to pull the image when we run `make deploy` later. We will also set a proper Github Container Registry address, so that later we can push the built image there to be used by the packaged version of our software.
+
+```Makefile
+IMG ?= ghcr.io/kerezsiz42/scanner-operator2:dev
+```
+
+```Makefile
+.PHONY: kind-load
+kind-load:
+  kind load docker-image ${IMG}
+```
+
+```sh
+make docker-build # Build the docker image
+make docker-push # Optionally push the image to the registry. This step is only needed if we want to test the helm deployment.
+make kind-load # Load the new docker image into kind cluster
+make deploy # Deploy or redeploy all resources that are needed for the newest version
+```
+
+```sh
+kubectl api-resources --verbs=list -o name | grep scanner
+```
+
+After this there should be pod a named scanner-controller-manager with `Running` status, along with the new service we just defined, the metric service, deployment and replicaset.
+
+```sh
+$ kubectl get all -n scanner-system
+NAME                                              READY   STATUS    RESTARTS   AGE
+pod/scanner-controller-manager-777b874846-c2tpw   1/1     Running   0          25m
+
+NAME                                                 TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+service/scanner-controller-manager-api-service       ClusterIP   10.96.21.245    <none>        8000/TCP   25m
+service/scanner-controller-manager-metrics-service   ClusterIP   10.96.174.233   <none>        8443/TCP   25m
+
+NAME                                         READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/scanner-controller-manager   1/1     1            1           25m
+
+NAME                                                    DESIRED   CURRENT   READY   AGE
+replicaset.apps/scanner-controller-manager-777b874846   1         1         1       25m
+```
+
+We can access the logs outputted by the controller-manager using the `kubectl logs` command. Once we made sure the controller-manager pod is running properly, we can apply our new scanner resource described in the file at `config/samples/scanner_v1_scanner.yaml`. Then to manually test the API we will use the `kubectl port-forward` command to make the previously defined service accessible on our host machine.
+
+```sh
+kubectl apply -f config/samples/scanner_v1_scanner.yaml
+kubectl port-forward service/scanner-controller-manager-api-service -n scanner-system 8000:8000
+```
+
+Using the `curl` command we can verify the result from our 'backend'.
+
+```sh
+$ curl localhost:8000
+Hello, world!
+```
 
 ### Helm and Helmify
 
-Helm is today the industry standard package manager for Kubernetes, so we will use this to create our packaged operator that can later be downloaded deployed and undeployed in a Kubernetes namespace similarly to [Istio](https://istio.io/latest/docs/ambient/install/helm/) without the need of the sourcecode and running `make install` and `make deploy` manually on every change.
+Helm is today the industry standard package manager for Kubernetes, so we will use this to create our packaged operator that can later be downloaded deployed and undeployed in a Kubernetes namespace similarly to [Istio](https://istio.io/latest/docs/ambient/install/helm/) without the need of the source code and running `make install` and `make deploy` manually on every change.
 
-[Helmify](https://github.com/arttor/helmify) is a tool that creates Helm charts from Kubernetes manifests (the yaml files). When running `make helm` it generates a helm chart in the chart directory of our repository. Our work here consists of copying the right Makefile commands from the documentation and runinning them appropriately when we create a new version of our software.
+[Helmify](https://github.com/arttor/helmify) is a tool that creates Helm charts from Kubernetes manifests (the yaml files). When running `make helm` it generates a helm chart in the `chart` directory of our repository. Our work here consists of copying the right Makefile commands from the documentation and running them appropriately when we create a new version of our software.
 
 ```Makefile
+.PHONY: helm
 helm: manifests kustomize helmify
   $(KUSTOMIZE) build config/default | $(HELMIFY)
 ```
 
-## Setting up the UI development environment
+After this we should be able to try out the deployment using helm. In order to start with a clean slate, we can recreate the cluster and create manually the new scanner-system namespace which will be used by the chart, and install it there. Of course kind does not have access to the docker image so we will have to load it again.
+
+```sh
+make helm # Generate the up-to-date helm chart within the ./char folder
+kind delete cluster && kind create cluster
+# If the image is not present, then pull it: "docker pull ghcr.io/kerezsiz42/scanner-operator2:dev"
+make kind-load # Load image into the kind cluster
+kubectl create namespace scanner-system
+helm install scanner ./chart -n scanner-system # Or "helm install scanner --repo https://github.com/kerezsiz42/scanner-operator2/tree/main/chart -n scanner-system"
+```
+
+We can verify that it is working the same way as before and call the base endpoint that replies with the `"Hello, world!"` message exactly how we programmed.
+
+```sh
+kubectl apply -f config/samples/scanner_v1_scanner.yaml
+kubectl port-forward service/scanner-chart-controller-manager-api-service -n scanner-system 8000:8000
+$ curl localhost:8000
+Hello, world!
+```
+
+To remove the deployment we run the `helm uninstall` command, and optionally remove the namespace too. By using helm we can potentially make use of its many benefits, which are dependency management, release management and parameterization. All these features are necessary to consider our project ready for industrial use.
+
+```sh
+helm uninstall scanner -n scanner-system
+kubectl delete namespace scanner-system
+```
+
+## Setting up the UI Development Environment
 
 The UI that we assemble here is considered to be the test or proof that the operator does what it has to and with a reasonable performance.
 
@@ -186,7 +280,7 @@ npm init -y
 npm install esbuild react react-dom @types/react-dom tailwindcss
 ```
 
-- `esbuild` is a fast bundler for Javascript and Typescript which is a superset of Javascript. A bundler is a tool that takes multiple source code files and combines them into one or more depending on the configuration. Before the `import` directive was available, using a bundler was our only choice to ship code with multiple dependencies if we did not want to use global scoped objects as with [JQuery](https://jquery.com/). Now that [module syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) is standardized, it is still useful to bundle our frontend code to minimize the number of network requests the browser has to make in order to gather all of the source files and run our code. The other reason is of course that we use Typescript which is directly not runnable by the browser, so a tranformation step is necessary.
+- `esbuild` is a fast bundler for Javascript and Typescript which is a superset of Javascript. A bundler is a tool that takes multiple source code files and combines them into one or more depending on the configuration. Before the `import` directive was available, using a bundler was our only choice to ship code with multiple dependencies if we did not want to use global scoped objects as with [JQuery](https://jquery.com/). If you read the whole thesis, I owe you a drink. Now that [module syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) is standardized, it is still useful to bundle our frontend code to minimize the number of network requests the browser has to make in order to gather all of the source files and run our code. The other reason is of course that we use Typescript which is directly not runnable by the browser, so a tranformation step is necessary.
 - `react`, `react-dom` and `@types/react-dom` are the packages we need to use to have all the necessary components of React for the web when we use Typescript.
 - `tailwindcss` is a [utility first](https://tailwindcss.com/docs/utility-first) CSS compiler that has a purpose similar to a Javascript bundler. Looks for files specified by the pattern in tailwind.config.js and searches for existing Tailwind class names specified in those, in order to include them in the final `output.css`.
 
@@ -224,16 +318,15 @@ function App() {
 root.render(App());
 ```
 
-We also define some script in our `package.json` file to document the steps it takes to build the final javascript and CSS files which can later be copied and served using a HTTP server. Here we are using the "production" `NODE_ENV` enviroment variable which instructs the bundler to omit program code that would enable us to attach certain debugging tools like the React Developer Tools that makes browsers aware of reacts internal state and behavior. This value can be changed anytime.
+We also define some script in our `package.json` file to document the steps it takes to build the final javascript and CSS files which can later be copied and served using a HTTP server. Here we are using the "production" `NODE_ENV` enviroment variable which instructs the bundler to omit program code that would enable us to attach certain debugging tools like the React Developer Tools that makes browsers aware of reacts internal state and behavior. This value can be changed back anytime for debugging purposes.
 
 ```json
 {
-    "scripts": {
-        "build-css": "./node_modules/.bin/tailwindcss -i input.css -o output.css",
-        "build-js": "./node_modules/.bin/esbuild index.tsx --define:process.env.NODE_ENV=\\\"production\\\" --bundle --outfile=bundle.js",
-        "build": "npm run build-css && npm run build-js"
-    },
-    ...
+  "scripts": {
+    "build-css": "./node_modules/.bin/tailwindcss -i input.css -o output.css",
+    "build-js": "./node_modules/.bin/esbuild index.tsx --define:process.env.NODE_ENV=\\\"production\\\" --bundle --outfile=bundle.js",
+    "build": "npm run build-css && npm run build-js"
+  }
 }
 ```
 
@@ -245,7 +338,7 @@ With all this done we can confirm that with this setup we can develop a modern U
 
 ## Idea and Implementation
 
-## Resources
+## Other Resources
 
-<https://esbuild.github.io/>
-<https://book.kubebuilder.io/reference/metrics>
+- <https://esbuild.github.io/>
+- <https://book.kubebuilder.io/reference/metrics>
