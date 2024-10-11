@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 
@@ -28,6 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	scannerv1 "github.com/kerezsiz42/scanner-operator2/api/v1"
+	"github.com/kerezsiz42/scanner-operator2/internal/oapi"
+	"github.com/kerezsiz42/scanner-operator2/internal/server"
 )
 
 // ScannerReconciler reconciles a Scanner object
@@ -54,17 +55,14 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	reconcilerLog := log.FromContext(ctx)
 
 	if r.Server == nil {
-		mux := http.NewServeMux()
-		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, err := fmt.Fprintf(w, "Hello, world!\n"); err != nil {
-				reconcilerLog.Error(err, "error while handling request")
-				os.Exit(1)
-			}
-		}))
-
-		r.Server = &http.Server{Addr: ":8000", Handler: mux}
+		si, m := server.NewServer()
+		r.Server = &http.Server{
+			Handler: oapi.HandlerFromMux(si, m),
+			Addr:    ":8000",
+		}
 
 		go func() {
+			reconcilerLog.Info("starting HTTP server")
 			if err := r.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				reconcilerLog.Error(err, "unable to start HTTP server")
 				os.Exit(1)

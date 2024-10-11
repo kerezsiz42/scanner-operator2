@@ -1,4 +1,4 @@
-# Scanner Operator
+# Development of an Industry-ready Kubernetes Operator
 
 ## Overview
 
@@ -12,16 +12,28 @@ Containerization is a lightweight virtualization method that packages applicatio
 
 ### Kubernetes
 
-It started out as a continuation to [Borg](https://medium.com/containermind/a-new-era-of-container-cluster-management-with-kubernetes-cd0b804e1409) which was Google's original internal Container Cluster Manager which at some point run most of their systems. Kubernetes is nowadays the most used open source container orchestration tool which provides higher level concepts that Docker or other runtimes that conform to [OCI](https://opencontainers.org/) does not have, namely self-healing, manual and automatic horizontal scaling, load balancing and automated rollouts and rollbacks to name a few. Figuratively speaking it's the navigator for Docker containers hence its name means 'steersman' or 'pilot' (grc: κυβερνήτης).
+It started out as a continuation to [Borg](https://medium.com/containermind/a-new-era-of-container-cluster-management-with-kubernetes-cd0b804e1409) which was Google's original internal Container Cluster Manager which at some point ran most of their systems. Kubernetes is nowadays the most used open source container orchestration tool which provides higher level concepts that Docker or other runtimes that conform to [OCI](https://opencontainers.org/) does not have, namely self-healing, manual and automatic horizontal scaling, load balancing and automated rollouts and rollbacks to name a few. Figuratively speaking it's the navigator for Docker containers hence its name means 'steersman' or 'pilot' (grc: κυβερνήτης).
 
 <https://www.paloaltonetworks.com/cyberpedia/containerization>
 <https://kubernetes.io/docs/concepts/overview/#going-back-in-time>
 
-### Cluster
+### Nodes and Clusters
 
-TODO: describe parts
+Nodes are physical or virtual machines that provide computing resources for the Cluster they are part of in order to run applications and services. New Nodes can be added to a Cluster and existing can be removed. Hosted workloads can be arbitrarily moved from one Node to other Nodes when performing maintenance.
 
-The name, namespace and kind triad uniquely identifies every resource within a cluster.
+TODO: Cluster
+
+### Namespace
+
+Namespaces are Cluster-wide unique resources which are used to create a virtual separation between components. The name, namespace and kind triad uniquely identifies every resource within a Cluster. We will take advantage of this later when I discuss about the operator.
+
+### Pods, ResplicaSets and Deployments
+
+Pods are arguably the most important resource within Kubernetes, as they incorporate one or more containers which can potentially share storage and network resources. They are considered the smallest deployable unit of computing since Kubernetes does not manage containers alone. Other important resorces are ReplicaSets which make sure that the requested number identical Pods are running at a given time and Deployments which incorporate ReplicaSets and provide mechanisms for rolling updates and rollbacks to minimize the downtime of an application.
+
+### Services
+
+Each pod has a unique IP address, so if one group of Pods wants to communicate with another, all the other Pods would have to know how to reach them, but the number of Pods can change dynamically due to their ephemeral nature. This problem is solved by the Service resource, using which we can provide a facade or abstraction over a multiple of Pods that are selected by tags.
 
 ## Why do we need Operators?
 
@@ -32,9 +44,9 @@ Controllers in Kubernetes are automations that have access to the Kubernetes API
 
 ## Technical Objectives
 
-## Initial Setup of the Project
+## Tooling Setup
 
-First we have to make sure we have the most recent stable version of go and kubectl CLI tools.
+First we have to make sure we have the most recent stable version of go and kubectl. Kubectl is basically a command line interface tool, with the help of which we can run commands in a given Cluster. In this case, we essentially communicate with the Kubernetes API server component via its the REST protocol.
 Each operating system has its own way of installing and managing these packages, but if you not need the newest version because of a certain new feature then it's more convenient to just rely upon the package provided by your distribution instead of what a dedicated version manager like [gvm](https://github.com/moovweb/gvm) can provide. As long as the positives don't outweigh the amount of extra work we have to put into managing things, we should go with the default option for simplicity.
 
 ```sh
@@ -72,7 +84,7 @@ Version: main.version{KubeBuilderVersion:"4.1.1", KubernetesVendor:"1.30.0", Git
 ```
 
 Binaries installed by the `go install` command are placed into `$(go env GOPATH)/bin` which is usually equal to `~/go/bin`.
-We can make these commands callable by putting this directory onto our $PATH if needed.
+We can make these commands callable by putting this directory onto our `$PATH` if needed.
 
 ```sh
 printf '\nexport PATH="$(go env GOPATH)/bin:$PATH"\n' >> ~/.zshrc
@@ -159,8 +171,29 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 Kustomize is a tool for customizing Kubernetes configurations. It allows us to generate resources from other resources and setting cross-cutting fields for resources along with composing and customizing collections of resources as documented on the official [Kubernetes docs website](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/#overview-of-kustomize). It is used here to make a more concise version of the Kubernetes resource files by minimizing the amount of copied parts thereby simplifing maintenance. In this project the `config` folder is full of such resource definitions.
 
-TODO: explain default kustomization file
-TODO: explain the new added service
+In the `config/default/kustomization.yaml` file we can set the namespace where the controller resources will be placed and a name prefix for these resources. Furthermore the `resources` section contains references to other kustomization files that will need to processed such as the RBAC (role based access control) rules and the CRD itself. Even though we will only have a single instance of the controller-manager, it is still a good practice to create a Service for it. To achieve that we will create a new file named `config/default/api_service.yaml` and add it to the kustomization resources. The final service looks like the following:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: scanner-operator2
+    app.kubernetes.io/managed-by: kustomize
+  name: controller-manager-api-service
+  namespace: system
+spec:
+  ports:
+    - name: http
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+  selector:
+    control-plane: controller-manager
+```
+
+So thanks to kustomize name will be prefixed with `scanner-` and the namespace will be replaced with `scanner-system` once the resource is applied.
 
 ### Development Workflow
 
@@ -260,7 +293,7 @@ kubectl delete namespace scanner-system
 
 ## Setting up the UI Development Environment
 
-The UI that we assemble here is considered to be the test or proof that the operator does what it has to and with a reasonable performance.
+The UI that we assemble here is considered to be the test or proof that the operator does what it has to and with a reasonable performance. Discussing this here might be considered a deviation from the original goal, but for the sake of testing it might still be worth implementing a proper UI.
 
 For simplicity's sake, I choose to develop this UI using React, since the tooling around it is very mature. Also, we will be using Node instead of the newer more modern javascript runtimes like Bun or Deno. These are functionally mostly compatible with Node but there could still be some rough edges or surprizing hardships when you are trying to achieve an exact result.
 
@@ -323,8 +356,8 @@ We also define some script in our `package.json` file to document the steps it t
 ```json
 {
   "scripts": {
-    "build-css": "./node_modules/.bin/tailwindcss -i input.css -o output.css",
-    "build-js": "./node_modules/.bin/esbuild index.tsx --define:process.env.NODE_ENV=\\\"production\\\" --bundle --outfile=bundle.js",
+    "build-css": "./node_modules/.bin/tailwindcss -i src/input.css -o output.css",
+    "build-js": "./node_modules/.bin/esbuild src/index.tsx --define:process.env.NODE_ENV=\\\"production\\\" --bundle --outfile=bundle.js",
     "build": "npm run build-css && npm run build-js"
   }
 }
@@ -336,9 +369,230 @@ The initial UI looks like the following in it's rendered form.
 
 With all this done we can confirm that with this setup we can develop a modern UI with a fast and easy to understand iteration loop since all components are configured correctly to get the resulting Javascript, CSS and HTML files.
 
-## Idea and Implementation
+## Exploration of the Idea
+
+### Grype and CVEs
+
+[Grype](https://github.com/anchore/grype) is a vulnerability scanner for container images and filesystems, which will do essence of the work. A scanning process results in some collection of [CVEs](https://www.cve.org/), which draw our attention to weaknesses in computational logic found in software and hardware components that, when exploited results in a negative impact to confidentiality, integrity, or availability of our product <https://nvd.nist.gov/vuln>.
+It supports multiple type of outputs, but from them [OWASP CycloneDX](https://cyclonedx.org/specification/overview/) [SBOM](https://www.cisa.gov/sbom) (software bill of materials) - an object model which shows a nested inventory or a list of ingredients that make up software components - contains probably the most information, so we will use that. Furtunately there is a Go library available to us that supports this format, so we can add it to our project dependencies:
+
+```sh
+go get github.com/CycloneDX/cyclonedx-go
+```
+
+```sh
+$ grype version
+Application:         grype
+Version:             0.82.0
+BuildDate:           2024-10-07T21:36:44Z
+GitCommit:           6b09bb857564cd3c59c0cc1b6ea997c5ee198b6d
+GitDescription:      v0.82.0
+Platform:            linux/amd64
+GoVersion:           go1.23.2
+Compiler:            gc
+Syft Version:        v1.14.0
+Supported DB Schema: 5
+```
+
+When trying Grype multiple times using a kubernetes Pod a potential pitfall becomes obvious: grype has to download its vulnerability database in each pod before performing the scan, which becomes an average 30 second long delay for each scan instead of a single initial delay. Trying the same with the local CLI does not produce the same issue, since this database is cached in the filesystem, although running two at the same time scans before a database is present results in the failure of both.
+
+```sh
+kubectl run -it grype --image=anchore/grype -- python
+kubectl delete pod grype
+kubectl run -it grype --image=anchore/grype -- python # Downloads vulnerability db again
+```
+
+Upon further inspection we can see that grype does provide a way to manage its database through subcommands, so this will be an additional responsibility that our operator needs to be in charge of.
+
+### Jobs for Parallelism
+
+The upper limit for the number of concurrent jobs that we provided on startup makes sure that not more than N number of scan jobs are running any time.
+
+- master-worker pattern
+
+### OpenAPI and REST
+
+REST stands for respresentation state transfer and is a set of architectural constraints that makes the job of designers, developers and users of an application programming interface easier by providing a few loose rules to follow. RESTful systems are stateless, cacheable, have a layered structure and when paired with client applications their inner workings are entirely decoupled.
+In order to comply with today's standards we implement the Backend API using [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen/) which is a tool that allows us to generate boilerplate go code out of an OpenAPI 3.0 definition (here `oapi_definition.yaml`). This way we can spend more time developing our business logic.
+There also exists a client-side code generator for Typescript ([openapi-ts](https://openapi-ts.dev/introduction)), but since the api will be simple, we will just set the right parameters for each API call by hand.
+
+## Synchronizing Front- and Backend Functionality
+
+In this section we will install the remaining dependencies and establish communication between the client and server side, setup and manually test the database connection.
+
+Contrary to my initial plans instead of Webhooks we will use Websockets. The reason for this is the performance gain that a continously open TCP connection can provide over sending new and new HTTP requests for each scanned image to the subscribers. Websocket is bidirectional by nature, but we will use it in a unidirectional way to notify clients about updates.
+
+- talk about jsdoc
+- show useFetch hook
+- <https://www.baeldung.com/cs/publisher-subscriber-model>
+
+```js
+//@ts-check
+
+/**
+ * @typedef {{signal?: AbortSignal}} SubscriberOptions
+ */
+
+/**
+ * @description A facade over Websocket client, which implements reconnection
+ * and extends on EventTarget to provide access to its "message" and "isConnected" events.
+ */
+export class Subscriber extends EventTarget {
+  /** @type {WebSocket | undefined} */
+  #ws = undefined;
+  /** @type {number | undefined} */
+  #timeoutId = undefined;
+  #isConnected = false;
+  #previousIsConnected = false;
+  #shouldBeOpen = true;
+
+  /**
+   * @param {string} url
+   * @param {SubscriberOptions} [options]
+   */
+  constructor(url, options) {
+    super();
+    this.#ws = this.#connect(url);
+
+    options?.signal?.addEventListener("abort", () => {
+      this.#shouldBeOpen = false;
+      this.#ws?.close();
+    });
+  }
+
+  /**
+   * @param {boolean} newState
+   */
+  #setState(newState) {
+    this.#previousIsConnected = this.#isConnected;
+    this.#isConnected = newState;
+
+    if (this.#previousIsConnected !== this.#isConnected) {
+      const ce = new CustomEvent("isConnected", { detail: this.#isConnected });
+      this.dispatchEvent(ce);
+    }
+  }
+
+  /**
+   * @param {string} url
+   * @returns {WebSocket}
+   */
+  #connect(url) {
+    clearTimeout(this.#timeoutId);
+    const ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      this.#setState(true);
+    };
+
+    /**
+     * @param {MessageEvent<string>} ev
+     */
+    ws.onmessage = (ev) => {
+      const detail = JSON.parse(ev.data);
+      const ce = new CustomEvent("message", { detail });
+      this.dispatchEvent(ce);
+    };
+
+    ws.onclose = (_ev) => {
+      this.#setState(false);
+      if (!this.#shouldBeOpen) return;
+      this.#timeoutId = setTimeout(() => this.#connect(url), 5000);
+    };
+
+    return (this.#ws = ws);
+  }
+}
+```
+
+On the client side fortunately all modern browsers implement this feature, but since the Go standard library does not implement a Websocket server we need to introduce a new dependency: Gorilla Websocket
+
+```sh
+go get github.com/gorilla/websocket
+```
+
+We can create a new package and its folder called `oapi` within the `internal` folder next to the controller, which will serve as a place to store everything that concerns OpenAPI and the code generation itself.
+
+```sh
+$ tree internal/oapi
+internal/oapi
+├── config.yaml
+├── generate.go
+├── oapi_definition.yaml
+├── oapi.gen.go
+└── oapi.go
+
+1 directory, 5 files
+```
+
+Here we are using the recommended 'tools go' approach, which means that instead of installing the `oapi-codegen` code generator as a binary external to our program we introduce it into the version control system of `go.mod` in order to manage it as a dependency alongside our core application.
+
+```go
+// internal/oapi/oapi.go
+
+//go:build oapi
+// +build oapi
+
+package oapi
+
+import (
+  _ "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"
+)
+```
+
+This effectively enables us to call this CLI program through `go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` with the `--confing` parameter and the path to our definition. In the `generate.go` we make use of the `go:generate` directive and Go's metaprogramming capabilities, which means that we can write program code using program code. This process is ran by the programmer before compilation or build time in other words during development.
+
+```go
+// internal/oapi/generate.go
+package oapi
+
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=config.yaml oapi_definition.yaml
+```
+
+We can configure it to only generate models out of OpenAPI schemas and the `ServerInterface` with the proper methods that correspond to the paths section in our definition. Running the `make gen` command creates the `oapi.gen.go` file.
+
+```yaml
+# internal/oapi/config.yaml
+package: oapi
+generate:
+  std-http-server: true
+  models: true
+output: oapi.gen.go
+```
+
+- embed.go and why at root
+- websocket subscriber
+- show Reconciler modification
+- show ui
+
+### Database Package
+
+```sh
+go get -u gorm.io/gorm
+go get -u gorm.io/driver/sqlite
+go get -u gorm.io/driver/mysql
+go get -u gorm.io/driver/postgres
+```
+
+- not complex migrations
+- setup gorm
+- setup dialector
+- error handling convention
+- <https://gorm.io/>
+
+Finishing all these things we can confirm that the necessary dependencies are all installed and configured to work together so we can step over to the next phase which is implementing the business logic of the operator.
+
+## Implementation
+
+CRUD stands for an API that support creating, retrieving, updating and deleting a certain resource.
+
+## Metrics and Monitoring using Prometheus
+
+- <https://book.kubebuilder.io/reference/metrics>
+- <https://prometheus.io/docs/guides/go-application/>
 
 ## Other Resources
 
 - <https://esbuild.github.io/>
-- <https://book.kubebuilder.io/reference/metrics>
+- <https://maelvls.dev/kubernetes-conditions/>
+- <https://swagger.io/docs/specification/v3_0/describing-parameters/>

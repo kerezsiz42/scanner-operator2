@@ -1,0 +1,24 @@
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: Scanner Operator API
+paths:
+  /hello:
+    get:
+      responses:
+        "200":
+          description: hello respose
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hello"
+components:
+  schemas:
+    Hello:
+      type: object
+      required:
+        - hello
+      properties:
+        hello:
+          type: string
+          example: Hello, world!

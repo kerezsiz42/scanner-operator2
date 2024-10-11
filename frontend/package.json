@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "index.tsx",
   "scripts": {
-    "build-css": "./node_modules/.bin/tailwindcss -i input.css -o output.css",
-    "build-js": "./node_modules/.bin/esbuild index.tsx --define:process.env.NODE_ENV=\\\"production\\\" --bundle --outfile=bundle.js",
+    "build-css": "./node_modules/.bin/tailwindcss -i src/input.css -o output.css",
+    "build-js": "./node_modules/.bin/esbuild src/index.tsx --define:process.env.NODE_ENV=\\\"production\\\" --bundle --outfile=bundle.js",
     "build": "npm run build-css && npm run build-js"
   },
   "keywords": [],
