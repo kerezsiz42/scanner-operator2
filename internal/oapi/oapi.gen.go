@@ -18,8 +18,20 @@ type Hello struct {
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+	// (GET /)
+	Get(w http.ResponseWriter, r *http.Request)
+
+	// (GET /bundle.js)
+	GetBundleJs(w http.ResponseWriter, r *http.Request)
+
 	// (GET /hello)
 	GetHello(w http.ResponseWriter, r *http.Request)
+
+	// (GET /output.css)
+	GetOutputCss(w http.ResponseWriter, r *http.Request)
+
+	// (GET /subscribe)
+	GetSubscribe(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -31,11 +43,67 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// Get operation middleware
+func (siw *ServerInterfaceWrapper) Get(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Get(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBundleJs operation middleware
+func (siw *ServerInterfaceWrapper) GetBundleJs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBundleJs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHello operation middleware
 func (siw *ServerInterfaceWrapper) GetHello(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHello(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOutputCss operation middleware
+func (siw *ServerInterfaceWrapper) GetOutputCss(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOutputCss(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSubscribe operation middleware
+func (siw *ServerInterfaceWrapper) GetSubscribe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSubscribe(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -165,7 +233,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc("GET "+options.BaseURL+"/", wrapper.Get)
+	m.HandleFunc("GET "+options.BaseURL+"/bundle.js", wrapper.GetBundleJs)
 	m.HandleFunc("GET "+options.BaseURL+"/hello", wrapper.GetHello)
+	m.HandleFunc("GET "+options.BaseURL+"/output.css", wrapper.GetOutputCss)
+	m.HandleFunc("GET "+options.BaseURL+"/subscribe", wrapper.GetSubscribe)
 
 	return m
 }

@@ -4,10 +4,6 @@
  * @typedef {{signal?: AbortSignal}} SubscriberOptions
  */
 
-/**
- * @description A facade over Websocket client, which implements reconnection
- * and extends on EventTarget to provide access to its "message" and "isConnected" events.
- */
 export class Subscriber extends EventTarget {
   /** @type {WebSocket | undefined} */
   #ws = undefined;
@@ -39,7 +35,7 @@ export class Subscriber extends EventTarget {
     this.#isConnected = newState;
 
     if (this.#previousIsConnected !== this.#isConnected) {
-      const ce = new CustomEvent("isConnected", { detail: this.#isConnected });
+      const ce = new CustomEvent("connection", { detail: this.#isConnected });
       this.dispatchEvent(ce);
     }
   }
@@ -67,8 +63,9 @@ export class Subscriber extends EventTarget {
 
     ws.onclose = (_ev) => {
       this.#setState(false);
-      if (!this.#shouldBeOpen) return;
-      this.#timeoutId = setTimeout(() => this.#connect(url), 5000);
+      if (this.#shouldBeOpen) {
+        this.#timeoutId = setTimeout(() => this.#connect(url), 5000);
+      }
     };
 
     return (this.#ws = ws);

@@ -12,6 +12,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Hello"
+  /subscribe:
+    get:
+      responses:
+        "101":
+          description: Opening a websocket connection
+  /:
+    get:
+      responses:
+        "200":
+          description: Return the HTML part of the frontend
+          content:
+            text/html:
+              schema:
+                type: string
+  /bundle.js:
+    get:
+      responses:
+        "200":
+          description: Return the Javascript part of the frontend
+          content:
+            text/javascript:
+              schema:
+                type: string
+  /output.css:
+    get:
+      responses:
+        "200":
+          description: Return the CSS part of the frontend
+          content:
+            text/css:
+              schema:
+                type: string
 components:
   schemas:
     Hello:

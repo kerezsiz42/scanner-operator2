@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"os"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -30,7 +31,10 @@ func GetDialector(databaseType string, dsn string) (gorm.Dialector, error) {
 	}
 }
 
-func GetDatabase(databaseType string, dsn string) (*gorm.DB, error) {
+func GetDatabase() (*gorm.DB, error) {
+	databaseType := os.Getenv("DATABASE_TYPE")
+	dsn := os.Getenv("DSN")
+
 	dialector, err := GetDialector(databaseType, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dialector: %w", err)

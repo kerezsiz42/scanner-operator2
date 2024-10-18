@@ -14,14 +14,14 @@ Containerization is a lightweight virtualization method that packages applicatio
 
 It started out as a continuation to [Borg](https://medium.com/containermind/a-new-era-of-container-cluster-management-with-kubernetes-cd0b804e1409) which was Google's original internal Container Cluster Manager which at some point ran most of their systems. Kubernetes is nowadays the most used open source container orchestration tool which provides higher level concepts that Docker or other runtimes that conform to [OCI](https://opencontainers.org/) does not have, namely self-healing, manual and automatic horizontal scaling, load balancing and automated rollouts and rollbacks to name a few. Figuratively speaking it's the navigator for Docker containers hence its name means 'steersman' or 'pilot' (grc: κυβερνήτης).
 
-<https://www.paloaltonetworks.com/cyberpedia/containerization>
-<https://kubernetes.io/docs/concepts/overview/#going-back-in-time>
+- <https://www.paloaltonetworks.com/cyberpedia/containerization>
+- <https://kubernetes.io/docs/concepts/overview/#going-back-in-time>
 
 ### Nodes and Clusters
 
-Nodes are physical or virtual machines that provide computing resources for the Cluster they are part of in order to run applications and services. New Nodes can be added to a Cluster and existing can be removed. Hosted workloads can be arbitrarily moved from one Node to other Nodes when performing maintenance.
+At a minimum, a cluster contains a control plane and one or more compute machines, or nodes. The control plane is responsible for maintaining the desired state of the cluster, such as which applications are running and which container images they use. Nodes actually run the applications and workloads. See: <https://www.redhat.com/en/topics/containers/what-is-a-kubernetes-cluster>
 
-TODO: Cluster
+Nodes are physical or virtual machines that provide computing resources for the Cluster they are part of in order to run applications and services. New Nodes can be added to a Cluster and existing can be removed. Hosted workloads can be arbitrarily moved from one Node to other Nodes when performing maintenance.
 
 ### Namespace
 
@@ -35,6 +35,8 @@ Pods are arguably the most important resource within Kubernetes, as they incorpo
 
 Each pod has a unique IP address, so if one group of Pods wants to communicate with another, all the other Pods would have to know how to reach them, but the number of Pods can change dynamically due to their ephemeral nature. This problem is solved by the Service resource, using which we can provide a facade or abstraction over a multiple of Pods that are selected by tags.
 
+- TODO: ingress
+
 ## Why do we need Operators?
 
 Controllers in Kubernetes are automations that have access to the Kubernetes API and other resources - often outside the cluster - in order to observe the state of the cluster and act on the changes in accordance with the logic they were implemented with. Operators are basically controllers which define a CRD (custom resource defintion), so they are effectively a way to extend the functionality of Kubernetes.
@@ -42,9 +44,9 @@ Controllers in Kubernetes are automations that have access to the Kubernetes API
 <https://kubernetes.io/docs/concepts/architecture/controller/>
 <https://konghq.com/blog/learning-center/kubernetes-controllers-vs-operators>
 
-## Technical Objectives
-
 ## Tooling Setup
+
+### Go and Kubectl
 
 First we have to make sure we have the most recent stable version of go and kubectl. Kubectl is basically a command line interface tool, with the help of which we can run commands in a given Cluster. In this case, we essentially communicate with the Kubernetes API server component via its the REST protocol.
 Each operating system has its own way of installing and managing these packages, but if you not need the newest version because of a certain new feature then it's more convenient to just rely upon the package provided by your distribution instead of what a dedicated version manager like [gvm](https://github.com/moovweb/gvm) can provide. As long as the positives don't outweigh the amount of extra work we have to put into managing things, we should go with the default option for simplicity.
@@ -67,6 +69,10 @@ Furthermore, we will need helm which I will introduce later.
 $ helm version
 version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132984ab3ab", GitTreeState:"clean", GoVersion:"go1.22.7"}
 ```
+
+### Kubebuilder
+
+- TODO: describe kubebuilder
 
 Then we download the latest release of Kubebuilder CLI, make it executable and move it into out `/usr/local/bin` where user installed binaries are usually stored.
 
@@ -103,7 +109,11 @@ Then we create an API with a group, version and kind name.
 kubebuilder create api --group scanner --version v1 --kind Scanner
 ```
 
-After these steps we will have a scaffold generated in the `internal/controller` folder for us. The two most important methods are the `Reconciler` and the `SetupWithManager` which we will take a more in depth look at later. Also, in order to setup a cluster we can use a tool called [kind](https://kind.sigs.k8s.io/) which makes it easy to create a delete Kubernetes clusters and nodes for our development.
+After these steps we will have a scaffold generated in the `internal/controller` folder for us. The two most important methods are the `Reconciler` and the `SetupWithManager` which we will take a more in depth look at later.
+
+### Kind
+
+Also, in order to setup a cluster we can use a tool called [kind](https://kind.sigs.k8s.io/) which makes it easy to create a delete Kubernetes clusters and nodes for our development.
 
 ```sh
 go install sigs.k8s.io/kind@v0.24.0
@@ -291,7 +301,7 @@ helm uninstall scanner -n scanner-system
 kubectl delete namespace scanner-system
 ```
 
-## Setting up the UI Development Environment
+## Setting up the Frontend Development Environment
 
 The UI that we assemble here is considered to be the test or proof that the operator does what it has to and with a reasonable performance. Discussing this here might be considered a deviation from the original goal, but for the sake of testing it might still be worth implementing a proper UI.
 
@@ -348,7 +358,7 @@ function App() {
   return <h1 className="text-3xl font-bold underline">Hello, world!</h1>;
 }
 
-root.render(App());
+root.render(<App />);
 ```
 
 We also define some script in our `package.json` file to document the steps it takes to build the final javascript and CSS files which can later be copied and served using a HTTP server. Here we are using the "production" `NODE_ENV` enviroment variable which instructs the bundler to omit program code that would enable us to attach certain debugging tools like the React Developer Tools that makes browsers aware of reacts internal state and behavior. This value can be changed back anytime for debugging purposes.
@@ -371,9 +381,20 @@ With all this done we can confirm that with this setup we can develop a modern U
 
 ## Exploration of the Idea
 
+The goal of this operator is to give constant feedback about the security status of our Kubernetes Cluster. It collects and scans container images using an external tool that can run in a Pod and consequently as a Job. In our test, we will install the custom resource in the default namespace.
+
+The controller-manager will be subscribed to certain events and therefore notified by the Kubernetes API each time a new Pod is started and it will look into the connected database in order to decide if it should start a new scan Job or not. Successful Jobs return their results by calling an endpoint on the REST API that is provided by the operator. The service that connects to the operator deployment can be accessed from the outside either through an ingress or by using port-forwarding.
+
+![Architecture](architecture.png)
+
+We will make use of the publisher-subscriber architectural pattern which is an often used communication method between components of distributed systems. The advantage of this approach is the loose coupling and scalability it provides and that subscribers will get a faster - almost real-time - notification when an event occurs compared to polling wich would involve the client calling the API repeatedly thereby cause unnecessary traffic. When a client loads the frontend code, it automatically subscribes to scan events by using Websocket. Once such event occurs the client can load the result from the same REST API and display them in a list on the user interface.
+
+![Sequence Diagram](sequence-diagram.png)
+
 ### Grype and CVEs
 
 [Grype](https://github.com/anchore/grype) is a vulnerability scanner for container images and filesystems, which will do essence of the work. A scanning process results in some collection of [CVEs](https://www.cve.org/), which draw our attention to weaknesses in computational logic found in software and hardware components that, when exploited results in a negative impact to confidentiality, integrity, or availability of our product <https://nvd.nist.gov/vuln>.
+
 It supports multiple type of outputs, but from them [OWASP CycloneDX](https://cyclonedx.org/specification/overview/) [SBOM](https://www.cisa.gov/sbom) (software bill of materials) - an object model which shows a nested inventory or a list of ingredients that make up software components - contains probably the most information, so we will use that. Furtunately there is a Go library available to us that supports this format, so we can add it to our project dependencies:
 
 ```sh
@@ -394,7 +415,7 @@ Syft Version:        v1.14.0
 Supported DB Schema: 5
 ```
 
-When trying Grype multiple times using a kubernetes Pod a potential pitfall becomes obvious: grype has to download its vulnerability database in each pod before performing the scan, which becomes an average 30 second long delay for each scan instead of a single initial delay. Trying the same with the local CLI does not produce the same issue, since this database is cached in the filesystem, although running two at the same time scans before a database is present results in the failure of both.
+When trying Grype multiple times using a kubernetes Pod a potential pitfall becomes obvious: grype has to download its vulnerability database in each pod before performing the scan, which becomes an average 30 second long delay for each scan instead of a single initial delay. This is very wasteful. Trying the same with the local CLI does not produce the same issue, since this database is cached in the filesystem, although running two at the same time scans before a database is present results in the failure of both.
 
 ```sh
 kubectl run -it grype --image=anchore/grype -- python
@@ -402,29 +423,42 @@ kubectl delete pod grype
 kubectl run -it grype --image=anchore/grype -- python # Downloads vulnerability db again
 ```
 
-Upon further inspection we can see that grype does provide a way to manage its database through subcommands, so this will be an additional responsibility that our operator needs to be in charge of.
+Upon further inspection we can see that grype does provide a way to manage its database through subcommands, so this might be an additional responsibility that our operator could be in charge of, but then it might be a better solution to avoid running jobs concurrently. Doing it that way makes throttling unnecessary, because not putting too much processing load on the cluster is also an important aspect of our goal.
 
-### Jobs for Parallelism
-
-The upper limit for the number of concurrent jobs that we provided on startup makes sure that not more than N number of scan jobs are running any time.
-
-- master-worker pattern
+<https://stackoverflow.com/questions/62694361/how-to-reference-a-local-volume-in-kind-kubernetes-in-docker>
 
 ### OpenAPI and REST
 
 REST stands for respresentation state transfer and is a set of architectural constraints that makes the job of designers, developers and users of an application programming interface easier by providing a few loose rules to follow. RESTful systems are stateless, cacheable, have a layered structure and when paired with client applications their inner workings are entirely decoupled.
-In order to comply with today's standards we implement the Backend API using [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen/) which is a tool that allows us to generate boilerplate go code out of an OpenAPI 3.0 definition (here `oapi_definition.yaml`). This way we can spend more time developing our business logic.
-There also exists a client-side code generator for Typescript ([openapi-ts](https://openapi-ts.dev/introduction)), but since the api will be simple, we will just set the right parameters for each API call by hand.
 
-## Synchronizing Front- and Backend Functionality
+In order to comply with today's standards we implement the Backend API using [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen/) which is a tool that allows us to generate boilerplate go code out of an OpenAPI 3.0 definition (here `oapi_definition.yaml`). This way we can spend more time developing our business logic.
+
+There also exists a client-side code generator for Typescript ([openapi-ts](https://openapi-ts.dev/introduction)) along with a matching HTTP client, but since the API will be very simple, we will only install the code generator to automatically generate the reponse objects for us that we can later arbitrarily place anywhere.
+
+```sh
+npm i openapi-typescript
+```
+
+After installing the new package we can set up an npm script so that we do not have to remember the command every time:
+
+```json
+// package.json
+{
+  "scripts": {
+    "gen": "./node_modules/.bin/openapi-typescript ../internal/oapi/oapi_definition.yaml -o ./src/oapi.gen.d.ts"
+  }
+}
+```
+
+## Phase 1: Synchronizing Front- and Backend Functionality
 
 In this section we will install the remaining dependencies and establish communication between the client and server side, setup and manually test the database connection.
 
 Contrary to my initial plans instead of Webhooks we will use Websockets. The reason for this is the performance gain that a continously open TCP connection can provide over sending new and new HTTP requests for each scanned image to the subscribers. Websocket is bidirectional by nature, but we will use it in a unidirectional way to notify clients about updates.
 
-- talk about jsdoc
-- show useFetch hook
-- <https://www.baeldung.com/cs/publisher-subscriber-model>
+The following component is a facade over Websocket client, which implements automatic reconnection and extends [EventTarget](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) to provide access to its "message" events. Using the `addEventListener` method one can register a callback that can process the incoming `CustomEvent` object as it arrives. The connection can be closed using the web standard [AbortSignal API](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal). It works with the assumption that the publisher will always send JSON strings so it tries to parse the incoming data accoringly.
+
+![Subscriber Class](subscribe-class.png)
 
 ```js
 //@ts-check
@@ -433,10 +467,6 @@ Contrary to my initial plans instead of Webhooks we will use Websockets. The rea
  * @typedef {{signal?: AbortSignal}} SubscriberOptions
  */
 
-/**
- * @description A facade over Websocket client, which implements reconnection
- * and extends on EventTarget to provide access to its "message" and "isConnected" events.
- */
 export class Subscriber extends EventTarget {
   /** @type {WebSocket | undefined} */
   #ws = undefined;
@@ -468,7 +498,7 @@ export class Subscriber extends EventTarget {
     this.#isConnected = newState;
 
     if (this.#previousIsConnected !== this.#isConnected) {
-      const ce = new CustomEvent("isConnected", { detail: this.#isConnected });
+      const ce = new CustomEvent("connection", { detail: this.#isConnected });
       this.dispatchEvent(ce);
     }
   }
@@ -496,13 +526,29 @@ export class Subscriber extends EventTarget {
 
     ws.onclose = (_ev) => {
       this.#setState(false);
-      if (!this.#shouldBeOpen) return;
-      this.#timeoutId = setTimeout(() => this.#connect(url), 5000);
+      if (this.#shouldBeOpen) {
+        this.#timeoutId = setTimeout(() => this.#connect(url), 5000);
+      }
     };
 
     return (this.#ws = ws);
   }
 }
+```
+
+This class is documented using JSDoc type annotations which can be checked using the same Typescript compiler like normal `.ts` files so the two solutions are basically equivalent, except it is a valid `.js` file and the type annotations are comments. Wrapping such components into React Hooks is not an impossible task. As a test, we can define an anonymous function in a `useEffect` hook. We create an AbortController that can be used to emit an abort signal when the component gets unmounted from the DOM and register a function on the "message" event so it prints the content to the console for now.
+
+```tsx
+// frontend/src/index.tsx
+useEffect(() => {
+  const ac = new AbortController();
+  const s = new Subscriber("/subscribe", { signal: ac.signal });
+  s.addEventListener("message", (e: CustomEventInit) => {
+    console.log(e.detail);
+  });
+
+  return () => ac.abort();
+}, []);
 ```
 
 On the client side fortunately all modern browsers implement this feature, but since the Go standard library does not implement a Websocket server we need to introduce a new dependency: Gorilla Websocket
@@ -511,7 +557,7 @@ On the client side fortunately all modern browsers implement this feature, but s
 go get github.com/gorilla/websocket
 ```
 
-We can create a new package and its folder called `oapi` within the `internal` folder next to the controller, which will serve as a place to store everything that concerns OpenAPI and the code generation itself.
+We can create a new package and its folder called `oapi` within the `internal` folder next to the controller, which will serve as a place to store everything that concerns itself with OpenAPI and the code generation itself.
 
 ```sh
 $ tree internal/oapi
@@ -540,7 +586,7 @@ import (
 )
 ```
 
-This effectively enables us to call this CLI program through `go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` with the `--confing` parameter and the path to our definition. In the `generate.go` we make use of the `go:generate` directive and Go's metaprogramming capabilities, which means that we can write program code using program code. This process is ran by the programmer before compilation or build time in other words during development.
+This effectively enables us to call this CLI program through `go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` with the `--config` parameter and the path to our definition. In the `generate.go` we make use of the `go:generate` directive and Go's metaprogramming capabilities, which means that we can write program code using program code. This process is ran by the programmer before compilation or build time in other words during development.
 
 ```go
 // internal/oapi/generate.go
@@ -560,12 +606,142 @@ generate:
 output: oapi.gen.go
 ```
 
-- embed.go and why at root
-- websocket subscriber
-- show Reconciler modification
-- show ui
+First we define a new API endpoint in our OpenAPI 3.0 specification. The info section provides metadata, including the API version (1.0.0) and the title (Scanner Operator API). Under paths, the root path (/) is defined with a GET operation. The response for a successful GET request (HTTP status 200) is specified to return HTML content, with the content type as text/html, and the response schema being a simple string. We will create such definitions for all of our endpoints including the WebSocket too.
 
-### Database Package
+```yaml
+# internal/oapi/oapi_definition.yaml
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: Scanner Operator API
+paths:
+  /:
+    get:
+      responses:
+        "200":
+          description: Return the HTML part of the frontend
+          content:
+            text/html:
+              schema:
+                type: string
+# ...
+```
+
+Once the new `oapi.gen.go` file is created we can make use of these `structs` and methods in our implementation class. Go's type safety ensures that in our implementation all methods are defined in accordance with the generated `ServerInterface`. I case our implementation is incorrect the compiler wil show the type mismatch at `oapi.HandlerFromMux()` where the server implementation is used.
+
+```go
+// internal/server/server.go
+// ...
+
+type Server struct {
+  db       *gorm.DB
+  upgrader *websocket.Upgrader
+}
+
+func NewServer(db *gorm.DB) *Server {
+  return &Server{
+    db:       db,
+    upgrader: &websocket.Upgrader{},
+  }
+}
+
+func (s *Server) Get(w http.ResponseWriter, r *http.Request) {
+  w.Header().Set("Content-Type", "text/html")
+  w.WriteHeader(http.StatusOK)
+  _, _ = w.Write(frontend.IndexHtml)
+}
+
+// ...
+```
+
+Go modules are created by a go.mod file which contain the module path, which - as generated by kubebuilder - the github repo path to our project. This way other modules can reference and download ours through github in order to use it. Modules contain packages (the folders) and packages contain the source files. Source files within a package have shared scope, so one file can access constants, variables, functions and structs without additional importing.
+
+Static files can be built into the binary as byte slices using the embed package, which is one of Go's unique features. We can place the `embed.go` file into the `frontend` folder, and reference these variables under the frontend package name in `internal/server` where we will build them into HTTP response handlers.
+
+```go
+// frontend/embed.go
+package frontend
+
+import _ "embed"
+
+//go:embed bundle.js
+var BundleJs []byte
+
+//go:embed index.html
+var IndexHtml []byte
+
+//go:embed output.css
+var OutputCss []byte
+```
+
+Of course all source files should be added to the final build so we will have to make sure these a are copied or added in the `Dockerfile` properly.
+
+```Dockerfile
+# ...
+COPY frontend/bundle.js frontend/bundle.js
+COPY frontend/index.html frontend/index.html
+COPY frontend/output.css frontend/output.css
+COPY frontend/embed.go frontend/embed.go
+# ...
+```
+
+To the the WebSocket connection we can define `GetSubscribe`, which handles WebSocket connections for a server. It upgrades an HTTP request to a WebSocket connection using `s.upgrader.Upgrade`, and if an error occurs, it logs the error and exits. Once the connection is successfully established, the function enters a loop where it sends the message "hello" to the client every 3 seconds using `c.WriteMessage`. If writing to the WebSocket connection fails, it logs the error and breaks the loop. The connection is closed once the function completes, thanks to the `defer c.Close()` statement.
+
+```go
+// internal/server/server.go
+// ...
+
+func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
+  c, err := s.upgrader.Upgrade(w, r, nil)
+  if err != nil {
+    log.Print("upgrade:", err)
+    return
+  }
+  defer c.Close()
+
+  for {
+    data := []byte("\"hello\"")
+    if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
+      log.Print("write:", err)
+      break
+    }
+
+    time.Sleep(3 * time.Second)
+  }
+}
+```
+
+### Setting Up the Database Connection
+
+In order to keep the project simple we are not going to implement complex database migration capabilites, so ![Gorm](https://gorm.io/)'s `AutoMigrate` is more than enough. Essentially we check on every startup if the database is clean and follow through with the migration. Otherwise the service return an error that the end-user would eventually see.
+
+```go
+// internal/database/dataabse.go
+func GetDatabase() (*gorm.DB, error) {
+  databaseType := os.Getenv("DATABASE_TYPE")
+  dsn := os.Getenv("DSN")
+
+  dialector, err := GetDialector(databaseType, dsn)
+  if err != nil {
+    return nil, fmt.Errorf("failed to get dialector: %w", err)
+  }
+
+  db, err := gorm.Open(dialector, &gorm.Config{})
+  if err != nil {
+    return nil, fmt.Errorf("failed to connect to database: %w", err)
+  }
+
+  if err := db.AutoMigrate(&Hello{}); err != nil {
+    return nil, fmt.Errorf("failed to automigrate database: %w", err)
+  }
+
+  return db, nil
+}
+```
+
+Here the `GetDialector` is just a switch construct that based on string comparison returns the correct dialector instance - the component that defines what type of sql database Gorm will communicate with. Another thing to note, is that the `GetDatabase` also accesses the `DATABASE_TYPE` and the `DSN` (data source name) environment variables internally.
+
+We also have to make sure the Gorm library and the drivers that we plan to use with are all installed:
 
 ```sh
 go get -u gorm.io/gorm
@@ -574,17 +750,129 @@ go get -u gorm.io/driver/mysql
 go get -u gorm.io/driver/postgres
 ```
 
-- not complex migrations
-- setup gorm
-- setup dialector
-- error handling convention
-- <https://gorm.io/>
+### Testing the Current Setup
+
+After these modifications the `Reconcile` method checks if the database connection (r.Db) is nil, it tries to establish one using database.GetDatabase() and exits if it fails. Similarly, if the HTTP server (r.Server) is not running, it creates a new server instance and starts it asynchronously. Errors during server startup are logged, and the application exits if the server cannot be started. If both components are successfully initialized, the method logs a successful reconciliation and returns without errors.
+
+```go
+// internal/controller/scanner_controller.go
+func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+  reconcilerLog := log.FromContext(ctx)
+
+  if r.Db == nil {
+    reconcilerLog.Info("connecting to database")
+    db, err := database.GetDatabase()
+    if err != nil {
+      reconcilerLog.Error(err, "unable to connect to database")
+      os.Exit(1)
+    }
+
+    r.Db = db
+  }
+
+  if r.Server == nil {
+    si := server.NewServer(r.Db)
+    m := http.NewServeMux()
+
+    r.Server = &http.Server{
+      Handler: oapi.HandlerFromMux(si, m),
+      Addr:    ":8000",
+    }
+
+    go func() {
+      reconcilerLog.Info("starting HTTP server")
+      if err := r.Server.ListenAndServe(); err != http.ErrServerClosed {
+        reconcilerLog.Error(err, "unable to start HTTP server")
+        os.Exit(1)
+      }
+    }()
+  }
+
+  reconcilerLog.Info("successfully reconciled")
+
+  return ctrl.Result{}, nil
+}
+```
+
+To create a test database that our operator can connect to we can define the following deployment and service:
+
+- The deployment deploys a single replica of a PostgreSQL container (postgres:17-alpine) using an image from Docker Hub. The container exposes port 5432, the default PostgreSQL port. It sets up environment variables for the database user (`POSTGRES_USER`), password (`POSTGRES_PASSWORD`), and database name (`POSTGRES_DB`). It uses an emptyDir volume mounted at /cache inside the container, which will persist data for the lifetime of the pod.
+
+- The service exposes the PostgreSQL container to other services in the cluster via a Kubernetes Service named postgres-service. The service forwards traffic on port `5432` (TCP) to the PostgreSQL pod, enabling access to the database.
+
+```yaml
+# kubectl apply -f postgres.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: password
+            - name: POSTGRES_USER
+              value: user
+            - name: POSTGRES_DB
+              value: db
+          volumeMounts:
+            - mountPath: /cache
+              name: postgres-volume
+      volumes:
+        - name: postgres-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      protocol: TCP
+      port: 5432
+      targetPort: 5432
+```
+
+Since we decided to use environment variables to configure the database connection of our operator we will have to add some default values in the `config/manager/manager.yaml` template. Here within the containers definition, we can define an `env` object that contains the necessary default values. Of course after changing this we also have to run the `make helm` command to reflect these changes in the helm chart's `values.yaml` file, which will be the place where the end-user would want to insert their own values.
+
+```yaml
+env:
+  - name: DATABASE_TYPE
+    value: postgres
+  - name: DSN
+    value: postgres://user:password@postgres-service.default.svc.cluster.local:5432/db
+```
+
+![Database and WebSocket Setup](database-websocket-setup.png)
 
 Finishing all these things we can confirm that the necessary dependencies are all installed and configured to work together so we can step over to the next phase which is implementing the business logic of the operator.
 
-## Implementation
+## Phase 2: Implementation
 
 CRUD stands for an API that support creating, retrieving, updating and deleting a certain resource.
+
+- TEXT datatype can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
+
+## Phase 3
+
+## Phase 4
 
 ## Metrics and Monitoring using Prometheus
 

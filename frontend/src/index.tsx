@@ -1,10 +1,20 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { useFetch } from "./useFetch";
 import { Subscriber } from "./subscriber";
 
+import type { components } from "./oapi.gen";
+
 function App() {
-  const data = useFetch(() => fetch("/hello").then((d) => d.json()));
+  const getHello = useCallback(
+    (signal: AbortSignal) =>
+      fetch("/hello", { signal }).then(
+        (d) => d.json() as Promise<components["schemas"]["Hello"]>
+      ),
+    []
+  );
+
+  const data = useFetch(getHello);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -12,6 +22,7 @@ function App() {
     s.addEventListener("message", (e: CustomEventInit) => {
       console.log(e.detail);
     });
+
     return () => ac.abort();
   }, []);
 
@@ -25,4 +36,4 @@ function App() {
 
 const element = document.getElementById("app")!;
 const root = ReactDOM.createRoot(element);
-root.render(App());
+root.render(<App />);

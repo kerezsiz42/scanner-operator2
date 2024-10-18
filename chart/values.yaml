@@ -16,6 +16,9 @@ controllerManager:
       capabilities:
         drop:
         - ALL
+    env:
+      databaseType: postgres
+      dsn: postgres://user:password@postgres-service.default.svc.cluster.local:5432/db
     image:
       repository: ghcr.io/kerezsiz42/scanner-operator2
       tag: dev

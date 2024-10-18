@@ -64,6 +64,11 @@ spec:
           - --leader-elect
           - --health-probe-bind-address=:8081
         image: controller:latest
+        env:
+          - name: DATABASE_TYPE
+            value: postgres
+          - name: DSN
+            value: postgres://user:password@postgres-service.default.svc.cluster.local:5432/db
         name: manager
         securityContext:
           allowPrivilegeEscalation: false

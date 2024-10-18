@@ -7,26 +7,42 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	root "github.com/kerezsiz42/scanner-operator2"
+	"github.com/kerezsiz42/scanner-operator2/frontend"
 	"github.com/kerezsiz42/scanner-operator2/internal/oapi"
+	"gorm.io/gorm"
 )
 
-var upgrader = websocket.Upgrader{}
-
-type Server struct{}
-
-func NewServer() (*Server, *http.ServeMux) {
-	// Serving static files of the UI
-	mux := http.NewServeMux()
-	mux.Handle("/bundle.js", http.FileServer(http.FS(root.BundleJs)))
-	mux.Handle("/", http.FileServer(http.FS(root.IndexHtml)))
-	mux.Handle("/output.css", http.FileServer(http.FS(root.OutputCss)))
-	mux.HandleFunc("/subscribe", subscribe)
-
-	return &Server{}, mux
+type Server struct {
+	db       *gorm.DB
+	upgrader *websocket.Upgrader
 }
 
-func (Server) GetHello(w http.ResponseWriter, r *http.Request) {
+func NewServer(db *gorm.DB) *Server {
+	return &Server{
+		db:       db,
+		upgrader: &websocket.Upgrader{},
+	}
+}
+
+func (s *Server) Get(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(frontend.IndexHtml)
+}
+
+func (s *Server) GetBundleJs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(frontend.BundleJs)
+}
+
+func (s *Server) GetOutputCss(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(frontend.OutputCss)
+}
+
+func (s *Server) GetHello(w http.ResponseWriter, r *http.Request) {
 	resp := oapi.Hello{
 		Hello: "world",
 	}
@@ -35,8 +51,8 @@ func (Server) GetHello(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-func subscribe(w http.ResponseWriter, r *http.Request) {
-	c, err := upgrader.Upgrade(w, r, nil)
+func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
+	c, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)
 		return
@@ -44,7 +60,7 @@ func subscribe(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 
 	for {
-		data := []byte("hello")
+		data := []byte("\"hello\"")
 		if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Print("write:", err)
 			break

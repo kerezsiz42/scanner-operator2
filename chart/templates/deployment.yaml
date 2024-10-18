@@ -24,6 +24,10 @@ spec:
         command:
         - /manager
         env:
+        - name: DATABASE_TYPE
+          value: {{ quote .Values.controllerManager.manager.env.databaseType }}
+        - name: DSN
+          value: {{ quote .Values.controllerManager.manager.env.dsn }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
         image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag

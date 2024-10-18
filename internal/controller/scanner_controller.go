@@ -21,12 +21,14 @@ import (
 	"net/http"
 	"os"
 
+	"gorm.io/gorm"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	scannerv1 "github.com/kerezsiz42/scanner-operator2/api/v1"
+	"github.com/kerezsiz42/scanner-operator2/internal/database"
 	"github.com/kerezsiz42/scanner-operator2/internal/oapi"
 	"github.com/kerezsiz42/scanner-operator2/internal/server"
 )
@@ -36,6 +38,7 @@ type ScannerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Server *http.Server
+	Db     *gorm.DB
 }
 
 // +kubebuilder:rbac:groups=scanner.zoltankerezsi.xyz,resources=scanners,verbs=get;list;watch;create;update;patch;delete
@@ -54,8 +57,21 @@ type ScannerReconciler struct {
 func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reconcilerLog := log.FromContext(ctx)
 
+	if r.Db == nil {
+		reconcilerLog.Info("connecting to database")
+		db, err := database.GetDatabase()
+		if err != nil {
+			reconcilerLog.Error(err, "unable to connect to database")
+			os.Exit(1)
+		}
+
+		r.Db = db
+	}
+
 	if r.Server == nil {
-		si, m := server.NewServer()
+		si := server.NewServer(r.Db)
+		m := http.NewServeMux()
+
 		r.Server = &http.Server{
 			Handler: oapi.HandlerFromMux(si, m),
 			Addr:    ":8000",
@@ -63,7 +79,7 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		go func() {
 			reconcilerLog.Info("starting HTTP server")
-			if err := r.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := r.Server.ListenAndServe(); err != http.ErrServerClosed {
 				reconcilerLog.Error(err, "unable to start HTTP server")
 				os.Exit(1)
 			}
