@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -60,7 +61,7 @@ func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 
 	for {
-		data := []byte("\"hello\"")
+		data := []byte("\"" + fmt.Sprint(time.Now().UnixNano()) + "\"")
 		if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Print("write:", err)
 			break

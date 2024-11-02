@@ -1,36 +1,19 @@
-import React, { useCallback, useEffect } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
-import { useFetch } from "./useFetch";
-import { Subscriber } from "./subscriber";
-
-import type { components } from "./oapi.gen";
+import { Navbar } from "./components/Navbar";
+import { Footer } from "./components/Footer";
+import { GlobalStateProvider } from "./components/GlobalState";
+import { ScanResultList } from "./components/ScanResultList";
 
 function App() {
-  const getHello = useCallback(
-    (signal: AbortSignal) =>
-      fetch("/hello", { signal }).then(
-        (d) => d.json() as Promise<components["schemas"]["Hello"]>
-      ),
-    []
-  );
-
-  const data = useFetch(getHello);
-
-  useEffect(() => {
-    const ac = new AbortController();
-    const s = new Subscriber("/subscribe", { signal: ac.signal });
-    s.addEventListener("message", (e: CustomEventInit) => {
-      console.log(e.detail);
-    });
-
-    return () => ac.abort();
-  }, []);
-
   return (
-    <div>
-      <h1 className="text-3xl font-bold underline">Scanner Operator</h1>
-      <p>{JSON.stringify(data)}</p>
-    </div>
+    <GlobalStateProvider>
+      <div className="h-full bg-slate-100 flex flex-col">
+        <Navbar />
+        <ScanResultList />
+        <Footer />
+      </div>
+    </GlobalStateProvider>
   );
 }
 

@@ -19,9 +19,8 @@ It started out as a continuation to [Borg](https://medium.com/containermind/a-ne
 
 ### Nodes and Clusters
 
-At a minimum, a cluster contains a control plane and one or more compute machines, or nodes. The control plane is responsible for maintaining the desired state of the cluster, such as which applications are running and which container images they use. Nodes actually run the applications and workloads. See: <https://www.redhat.com/en/topics/containers/what-is-a-kubernetes-cluster>
-
 Nodes are physical or virtual machines that provide computing resources for the Cluster they are part of in order to run applications and services. New Nodes can be added to a Cluster and existing can be removed. Hosted workloads can be arbitrarily moved from one Node to other Nodes when performing maintenance.
+At a minimum, a cluster contains a control plane and one or more compute machines, or nodes. The control plane is responsible for maintaining the desired state of the cluster, such as which applications are running and which container images they use. Nodes actually run the applications and workloads. See: <https://www.redhat.com/en/topics/containers/what-is-a-kubernetes-cluster>
 
 ### Namespace
 
@@ -31,11 +30,11 @@ Namespaces are Cluster-wide unique resources which are used to create a virtual 
 
 Pods are arguably the most important resource within Kubernetes, as they incorporate one or more containers which can potentially share storage and network resources. They are considered the smallest deployable unit of computing since Kubernetes does not manage containers alone. Other important resorces are ReplicaSets which make sure that the requested number identical Pods are running at a given time and Deployments which incorporate ReplicaSets and provide mechanisms for rolling updates and rollbacks to minimize the downtime of an application.
 
-### Services
+### Services and Ingress
 
 Each pod has a unique IP address, so if one group of Pods wants to communicate with another, all the other Pods would have to know how to reach them, but the number of Pods can change dynamically due to their ephemeral nature. This problem is solved by the Service resource, using which we can provide a facade or abstraction over a multiple of Pods that are selected by tags.
 
-- TODO: ingress
+An Ingress is a resource used to manage external access to services within a Kubernetes cluster, typically for HTTP and HTTPS traffic. It allows you to define rules for routing client requests to the appropriate services, based on hostnames, paths, or other factors. Unlike other methods of exposing services, such as NodePort or LoadBalancer, Ingress consolidates routing rules into a single point of control, which simplifies the management of traffic to multiple services. An Ingress controller, which operates as a reverse proxy, is necessary to implement these rules and manage load balancing, SSL termination, and traffic routing within the cluster.
 
 ## Why do we need Operators?
 
@@ -72,9 +71,8 @@ version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132
 
 ### Kubebuilder
 
-- TODO: describe kubebuilder
-
-Then we download the latest release of Kubebuilder CLI, make it executable and move it into out `/usr/local/bin` where user installed binaries are usually stored.
+Kubebuilder is a framework for building Kubernetes APIs using custom resource definitions (CRDs). It streamlines the process of developing Kubernetes controllers by providing a set of tools, libraries, and code generation features. Built on top of the Kubernetes controller-runtime library, it allows developers to create robust, scalable controllers and operators with minimal boilerplate code. It supports best practices like testing, scaffolding, and project layout, making it easier to manage and extend Kubernetes-native applications.
+We can download the latest release of Kubebuilder CLI, make it executable and move it into `/usr/local/bin` where user installed binaries are usually stored.
 
 ```sh
 curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
@@ -305,7 +303,7 @@ kubectl delete namespace scanner-system
 
 The UI that we assemble here is considered to be the test or proof that the operator does what it has to and with a reasonable performance. Discussing this here might be considered a deviation from the original goal, but for the sake of testing it might still be worth implementing a proper UI.
 
-For simplicity's sake, I choose to develop this UI using React, since the tooling around it is very mature. Also, we will be using Node instead of the newer more modern javascript runtimes like Bun or Deno. These are functionally mostly compatible with Node but there could still be some rough edges or surprizing hardships when you are trying to achieve an exact result.
+For simplicity's sake, I choose to develop this UI using React, since the tooling around it is very mature. Also, we will be using Node instead of the newer more modern javascript runtimes like Bun or Deno. These are functionally mostly compatible with Node but there could still be some rough edges or surprizing hardships when you are trying to achieve an exact result, or at least this is true at the time of this writing.
 
 Node can also be installed with the preferred version manager like [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm). I will be using the latest release at the time of writing this document.
 
@@ -450,7 +448,7 @@ After installing the new package we can set up an npm script so that we do not h
 }
 ```
 
-## Phase 1: Synchronizing Front- and Backend Functionality
+## Synchronizing Front- and Backend Functionality
 
 In this section we will install the remaining dependencies and establish communication between the client and server side, setup and manually test the database connection.
 
@@ -536,7 +534,7 @@ export class Subscriber extends EventTarget {
 }
 ```
 
-This class is documented using JSDoc type annotations which can be checked using the same Typescript compiler like normal `.ts` files so the two solutions are basically equivalent, except it is a valid `.js` file and the type annotations are comments. Wrapping such components into React Hooks is not an impossible task. As a test, we can define an anonymous function in a `useEffect` hook. We create an AbortController that can be used to emit an abort signal when the component gets unmounted from the DOM and register a function on the "message" event so it prints the content to the console for now.
+This class is documented using JSDoc type annotations which can be checked using the same Typescript compiler like normal `.ts` files so the two solutions are basically equivalent, except it is a valid `.js` file and the type annotations are comments. As a test, we can define an anonymous function in a `useEffect` hook. We create an AbortController that can be used to emit an abort signal when the component gets unmounted from the DOM and register a function on the "message" event so it prints the content to the console for now.
 
 ```tsx
 // frontend/src/index.tsx
@@ -606,7 +604,7 @@ generate:
 output: oapi.gen.go
 ```
 
-First we define a new API endpoint in our OpenAPI 3.0 specification. The info section provides metadata, including the API version (1.0.0) and the title (Scanner Operator API). Under paths, the root path (/) is defined with a GET operation. The response for a successful GET request (HTTP status 200) is specified to return HTML content, with the content type as text/html, and the response schema being a simple string. We will create such definitions for all of our endpoints including the WebSocket too.
+First we define a new API endpoint in our OpenAPI 3.0 specification. The info section provides metadata, including the API version (1.0.0) and the title (Scanner Operator API). Under paths, the root path (/) is defined with a GET operation. The response for a successful GET request (HTTP status 200) is specified to return HTML content, with the content type as text/html, and the response schema being a simple string. We will create such definitions for all of our endpoints including the WebSocket too. A great resource that can help us when specifying such definitions is the official [Swagger](https://swagger.io/docs/specification/v3_0/describing-parameters/) documentation website.
 
 ```yaml
 # internal/oapi/oapi_definition.yaml
@@ -862,19 +860,124 @@ env:
 
 ![Database and WebSocket Setup](database-websocket-setup.png)
 
-Finishing all these things we can confirm that the necessary dependencies are all installed and configured to work together so we can step over to the next phase which is implementing the business logic of the operator.
+Finishing all these things we can confirm that the necessary dependencies are all installed and configured to work together so we can step over to the next phase of the implementation process.
 
-## Phase 2: Implementation
+## Frontend Implementation
 
-CRUD stands for an API that support creating, retrieving, updating and deleting a certain resource.
+### Custom Hook
+
+We can create a proper wrapper hook for the `Subscriber` class to make it work well within React components. A React hook is a special function that lets you use React features in functional components, like state and lifecycle methods. Preexisting hooks, such as `useState` and `useEffect`, simplify component logic and enable reusability of stateful behavior across components and are the building blocks that enable use to build more complex components. The convention is to start the name of such function with the 'use' word in order to signal other developers about its nature.
+
+Our the `useSubscriber` hook is a modified version of the previously showed wrapper around the Subscriber class. It uses the `Subscriber` class to listen to events from a given URL ("/subscribe"). The hook accepts two callback props, `onMessage` and `onConnection`, which are called when respective "message" and "connection" events are triggered, passing along relevant data (e.detail) from each event. Inside the effect, once again an AbortController (ac) is created to allow cancelling and proper termination of the subscription when the component unmounts from the virtual DOM, by calling `ac.abort()` in the cleanup function. The `onMessage` and `onConnection` handlers are passed into the dependency list of `useEffect`, so that the hook is refreshed when the handlers change handlers.
+
+```tsx
+// frontend/src/hooks/useSubscriber.tsx
+export function useSubscriber({ onMessage, onConnection }: UseSubscriberProps) {
+  useEffect(() => {
+    const ac = new AbortController();
+    const s = new Subscriber("/subscribe", { signal: ac.signal });
+
+    s.addEventListener("message", (e: CustomEventInit) => {
+      onMessage(e.detail as string);
+    });
+
+    s.addEventListener("connection", (e: CustomEventInit) => {
+      onConnection(e.detail as boolean);
+    });
+
+    return () => ac.abort();
+  }, [onMessage, onConnection]);
+}
+```
+
+### State Management
+
+With the help of `createContext` function we can implement a global state manager which holds and makes available the application's state and a `dispatch` function for state updates for other components. The `GlobalStateProvider` component employs the `useReducer` hook to manage the application's state using `globalReducer`, starting with initialState. Within this provider, two callback functions, `onMessage` and `onConnection`, handle specific events: `onMessage` dispatches an "add" action to add a new item based on incoming messages, and onConnection dispatches a "connection_change" action when the app's connection status changes. These two has to be defined using the `useCallback` hooks to cache them between rerenders, otherwise the `Subscriber` class would be detatched and re-attached repeatedly in an uncontrolled manner. `useSubscriber` hooks into these callbacks, and the provider component passes the context value, allowing child components to access and interact with the global state.
+
+```tsx
+// frontend/src/components/GlobalState.tsx
+export const GlobalStateContext = createContext({
+  state: initialState,
+  dispatch: (action: Action) => {},
+});
+
+export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
+  const [state, dispatch] = useReducer(globalReducer, initialState);
+
+  const onMessage = useCallback((value: string) => {
+    // TODO: fetch new scanResult
+    const scanResult = { id: value };
+    dispatch({ type: "add", payload: [scanResult] });
+  }, []);
+
+  const onConnection = useCallback(
+    (isConnected: boolean) => {
+      // TODO: fetch all scanResults when it gets online again
+      dispatch({ type: "connection_change", isConnected });
+    },
+    [dispatch]
+  );
+
+  useSubscriber({ onMessage, onConnection });
+
+  return (
+    <GlobalStateContext.Provider value={{ state, dispatch }}>
+      {children}
+    </GlobalStateContext.Provider>
+  );
+};
+```
+
+The initialState includes two properties: `isConnected`, a boolean for connection status, and `scanResults`, an array of scan results. The Action type defines three possible actions: "add" to add new scan results, "remove" to delete a scan result by id, and "connection_change" to update the `isConnected` status. The `globalReducer` function updates the state based on the action type: "connection_change" updates the `isConnected` flag, "add" appends new `ScanResult` items to scanResults and sorts them by id, and "remove" filters out a `ScanResult` by id. This setup allows for flexible and predictable state management, supporting multiple actions that modify the global state in specific ways so the mutation logic is separated from visualization.
+
+```tsx
+// frontend/src/components/GlobalState.tsx
+const initialState = { isConnected: false, scanResults: [] as ScanResult[] };
+type State = typeof initialState;
+type Action =
+  | { type: "add"; payload: ScanResult[] }
+  | { type: "remove"; id: string }
+  | { type: "connection_change"; isConnected: boolean };
+
+function globalReducer(state: State, action: Action): State {
+  switch (action.type) {
+    case "connection_change":
+      return { ...state, isConnected: action.isConnected };
+    case "add":
+      return {
+        ...state,
+        scanResults: [...state.scanResults, ...action.payload].sort((a, b) =>
+          a.id.localeCompare(b.id)
+        ),
+      };
+    case "remove":
+      return {
+        ...state,
+        scanResults: state.scanResults.filter((s) => s.id !== action.id),
+      };
+  }
+}
+```
+
+So accessing and updating global state from within a component is as simple as passing the `GlobalStateContext` into `useContext` within our component.
+
+```tsx
+const { state, dispatch } = useContext(GlobalStateContext);
+```
+
+The following image shows the finished UI, where example data (UNIX timestamp) is streamed from the backend and the top bar also shows wether the connecetion is alive or not. For now the buttons do not have functionality.
+
+![The Mostly Finished UI](mostly-finished-ui.png)
+
+## Backend Implementation
+
+business logic of the operator
+
+CRUD stands for an API that supports creating, retrieving, updating and deleting a certain resource.
 
 - TEXT datatype can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
 
-## Phase 3
-
-## Phase 4
-
-## Metrics and Monitoring using Prometheus
+## Testing and Monitoring using Prometheus
 
 - <https://book.kubebuilder.io/reference/metrics>
 - <https://prometheus.io/docs/guides/go-application/>
@@ -883,4 +986,3 @@ CRUD stands for an API that support creating, retrieving, updating and deleting 
 
 - <https://esbuild.github.io/>
 - <https://maelvls.dev/kubernetes-conditions/>
-- <https://swagger.io/docs/specification/v3_0/describing-parameters/>
