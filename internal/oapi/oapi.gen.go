@@ -6,14 +6,23 @@
 package oapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/oapi-codegen/runtime"
 )
 
-// Hello defines model for Hello.
-type Hello struct {
-	Hello string `json:"hello"`
+// ScanResult defines model for ScanResult.
+type ScanResult struct {
+	ImageId string `json:"imageId"`
+
+	// Report is a big JSON object which should conform to the CycloneDX BOM schema.
+	Report json.RawMessage `json:"report"`
 }
+
+// PutScanResultsJSONRequestBody defines body for PutScanResults for application/json ContentType.
+type PutScanResultsJSONRequestBody = ScanResult
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -24,11 +33,20 @@ type ServerInterface interface {
 	// (GET /bundle.js)
 	GetBundleJs(w http.ResponseWriter, r *http.Request)
 
-	// (GET /hello)
-	GetHello(w http.ResponseWriter, r *http.Request)
-
 	// (GET /output.css)
 	GetOutputCss(w http.ResponseWriter, r *http.Request)
+
+	// (GET /scan-results)
+	GetScanResults(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /scan-results)
+	PutScanResults(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /scan-results/{imageId})
+	DeleteScanResultsImageId(w http.ResponseWriter, r *http.Request, imageId string)
+
+	// (GET /scan-results/{imageId})
+	GetScanResultsImageId(w http.ResponseWriter, r *http.Request, imageId string)
 
 	// (GET /subscribe)
 	GetSubscribe(w http.ResponseWriter, r *http.Request)
@@ -71,11 +89,11 @@ func (siw *ServerInterfaceWrapper) GetBundleJs(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
-// GetHello operation middleware
-func (siw *ServerInterfaceWrapper) GetHello(w http.ResponseWriter, r *http.Request) {
+// GetOutputCss operation middleware
+func (siw *ServerInterfaceWrapper) GetOutputCss(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetHello(w, r)
+		siw.Handler.GetOutputCss(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -85,11 +103,75 @@ func (siw *ServerInterfaceWrapper) GetHello(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
-// GetOutputCss operation middleware
-func (siw *ServerInterfaceWrapper) GetOutputCss(w http.ResponseWriter, r *http.Request) {
+// GetScanResults operation middleware
+func (siw *ServerInterfaceWrapper) GetScanResults(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetOutputCss(w, r)
+		siw.Handler.GetScanResults(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutScanResults operation middleware
+func (siw *ServerInterfaceWrapper) PutScanResults(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutScanResults(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteScanResultsImageId operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScanResultsImageId(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "imageId" -------------
+	var imageId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "imageId", r.PathValue("imageId"), &imageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "imageId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteScanResultsImageId(w, r, imageId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScanResultsImageId operation middleware
+func (siw *ServerInterfaceWrapper) GetScanResultsImageId(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "imageId" -------------
+	var imageId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "imageId", r.PathValue("imageId"), &imageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "imageId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScanResultsImageId(w, r, imageId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -235,8 +317,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc("GET "+options.BaseURL+"/", wrapper.Get)
 	m.HandleFunc("GET "+options.BaseURL+"/bundle.js", wrapper.GetBundleJs)
-	m.HandleFunc("GET "+options.BaseURL+"/hello", wrapper.GetHello)
 	m.HandleFunc("GET "+options.BaseURL+"/output.css", wrapper.GetOutputCss)
+	m.HandleFunc("GET "+options.BaseURL+"/scan-results", wrapper.GetScanResults)
+	m.HandleFunc("PUT "+options.BaseURL+"/scan-results", wrapper.PutScanResults)
+	m.HandleFunc("DELETE "+options.BaseURL+"/scan-results/{imageId}", wrapper.DeleteScanResultsImageId)
+	m.HandleFunc("GET "+options.BaseURL+"/scan-results/{imageId}", wrapper.GetScanResultsImageId)
 	m.HandleFunc("GET "+options.BaseURL+"/subscribe", wrapper.GetSubscribe)
 
 	return m

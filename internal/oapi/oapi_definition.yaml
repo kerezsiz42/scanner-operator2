@@ -3,25 +3,72 @@ info:
   version: 1.0.0
   title: Scanner Operator API
 paths:
-  /hello:
+  /scan-results:
     get:
       responses:
         "200":
-          description: hello respose
+          description: Responds with all ScanResults.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Hello"
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScanResult"
+    put:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanResult'
+      responses:
+        '200':
+          description: ScanResult upserted successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResult'
+        '400':
+          description: Invalid input.
+  /scan-results/{imageId}:
+    get:
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Responds with the requested ScanResult.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanResult"
+        '404':
+          description: ScanResult not found.
+    delete:
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: ScanResult deleted successfully.
   /subscribe:
     get:
       responses:
         "101":
-          description: Opening a websocket connection
+          description: |
+            Open a websocket connection which sends ScanResult imageIds when a new object
+            is inserted into the db in order to enable the client to fetch them as soon as possible.
   /:
     get:
       responses:
         "200":
-          description: Return the HTML part of the frontend
+          description: Responds with the HTML part of the frontend.
           content:
             text/html:
               schema:
@@ -30,7 +77,7 @@ paths:
     get:
       responses:
         "200":
-          description: Return the Javascript part of the frontend
+          description: Responds with the Javascript part of the frontend.
           content:
             text/javascript:
               schema:
@@ -39,18 +86,23 @@ paths:
     get:
       responses:
         "200":
-          description: Return the CSS part of the frontend
+          description: Responds with the CSS part of the frontend.
           content:
             text/css:
               schema:
                 type: string
 components:
   schemas:
-    Hello:
+    ScanResult:
       type: object
-      required:
-        - hello
       properties:
-        hello:
+        imageId:
           type: string
-          example: Hello, world!
+          example: alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d
+        report:
+          type: object
+          x-go-type: json.RawMessage
+          description: is a big JSON object which should conform to the CycloneDX BOM schema.
+      required:
+        - imageId
+        - report

@@ -2,26 +2,51 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
+	"errors"
 	"net/http"
-	"time"
+	"sync"
 
+	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
 	"github.com/kerezsiz42/scanner-operator2/frontend"
 	"github.com/kerezsiz42/scanner-operator2/internal/oapi"
+	"github.com/kerezsiz42/scanner-operator2/internal/service"
 	"gorm.io/gorm"
 )
 
 type Server struct {
-	db       *gorm.DB
-	upgrader *websocket.Upgrader
+	scanService service.ScanServiceInterface
+	upgrader    *websocket.Upgrader
+	logger      logr.Logger
+	broadcastCh chan string
+	connections map[*websocket.Conn]chan string
+	mu          sync.Mutex
 }
 
-func NewServer(db *gorm.DB) *Server {
+func NewServer(
+	scanService service.ScanServiceInterface,
+	logger logr.Logger,
+) *Server {
+	broadcastCh := make(chan string)
+	connections := make(map[*websocket.Conn]chan string)
+
+	go func() {
+		for {
+			message := <-broadcastCh
+
+			for _, ch := range connections {
+				ch <- message
+			}
+		}
+	}()
+
 	return &Server{
-		db:       db,
-		upgrader: &websocket.Upgrader{},
+		upgrader:    &websocket.Upgrader{},
+		scanService: scanService,
+		logger:      logger,
+		broadcastCh: broadcastCh,
+		connections: connections,
+		mu:          sync.Mutex{},
 	}
 }
 
@@ -43,30 +68,139 @@ func (s *Server) GetOutputCss(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(frontend.OutputCss)
 }
 
-func (s *Server) GetHello(w http.ResponseWriter, r *http.Request) {
-	resp := oapi.Hello{
-		Hello: "world",
-	}
-
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
-}
-
 func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
 	c, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("upgrade:", err)
+		s.logger.Error(err, "GetSubscribe")
 		return
 	}
+
 	defer c.Close()
 
+	ch := make(chan string)
+	defer close(ch)
+
+	s.mu.Lock()
+	s.connections[c] = ch
+	s.mu.Unlock()
+
+	go func() {
+		for {
+			imageId, ok := <-ch
+			if !ok {
+				return
+			}
+
+			data := []byte("\"" + imageId + "\"")
+			if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
+				s.logger.Error(err, "Web")
+				continue
+			}
+		}
+	}()
+
 	for {
-		data := []byte("\"" + fmt.Sprint(time.Now().UnixNano()) + "\"")
-		if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
-			log.Print("write:", err)
+		msgType, _, err := c.ReadMessage()
+		if err != nil {
 			break
 		}
 
-		time.Sleep(3 * time.Second)
+		if msgType == websocket.CloseMessage {
+			break
+		}
+	}
+
+	s.mu.Lock()
+	delete(s.connections, c)
+	s.mu.Unlock()
+}
+
+func (s *Server) GetScanResults(w http.ResponseWriter, r *http.Request) {
+	scanResults, err := s.scanService.ListScanResults()
+	if err != nil {
+		s.logger.Error(err, "GetScanResults")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	res := []oapi.ScanResult{}
+	for _, scanResult := range scanResults {
+		res = append(res, oapi.ScanResult{
+			ImageId: scanResult.ImageID,
+			Report:  json.RawMessage(scanResult.Report),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		s.logger.Error(err, "GetScanResults")
+	}
+}
+
+func (s *Server) PutScanResults(w http.ResponseWriter, r *http.Request) {
+	oapiScanResult := oapi.ScanResult{}
+	if err := json.NewDecoder(r.Body).Decode(&oapiScanResult); err != nil {
+		s.logger.Error(err, "PutScanResults")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	scanResult, err := s.scanService.UpsertScanResult(oapiScanResult.ImageId, string(oapiScanResult.Report))
+	if errors.Is(err, service.InvalidCycloneDXBOM) {
+		s.logger.Error(err, "PutScanResults")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	} else if err != nil {
+		s.logger.Error(err, "PutScanResults")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	s.broadcastCh <- scanResult.ImageID
+	s.logger.Info("PutScanResults", "new imageId broadcasted", scanResult.ImageID)
+
+	res := oapi.ScanResult{
+		ImageId: scanResult.ImageID,
+		Report:  json.RawMessage(scanResult.Report),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		s.logger.Error(err, "PutScanResults")
+	}
+}
+
+func (s *Server) DeleteScanResultsImageId(w http.ResponseWriter, r *http.Request, imageId string) {
+	if err := s.scanService.DeleteScanResult(imageId); err != nil {
+		s.logger.Error(err, "DeleteScanResultsImageId")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) GetScanResultsImageId(w http.ResponseWriter, r *http.Request, imageId string) {
+	scanResult, err := s.scanService.GetScanResult(imageId)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		s.logger.Error(err, "GetScanResultsImageId")
+		http.Error(w, "Not Found", http.StatusNotFound)
+	} else if err != nil {
+		s.logger.Error(err, "GetScanResultsImageId")
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	res := oapi.ScanResult{
+		ImageId: scanResult.ImageID,
+		Report:  json.RawMessage(scanResult.Report),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(res); err != nil {
+		s.logger.Error(err, "GetScanResultsImageId")
 	}
 }

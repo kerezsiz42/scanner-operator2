@@ -977,6 +977,10 @@ CRUD stands for an API that supports creating, retrieving, updating and deleting
 
 - TEXT datatype can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
 
+```sh
+go get github.com/oapi-codegen/runtime
+```
+
 ## Testing and Monitoring using Prometheus
 
 - <https://book.kubebuilder.io/reference/metrics>

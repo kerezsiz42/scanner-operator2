@@ -6,6 +6,21 @@ metadata:
   {{- include "chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - list
+  - watch
+- apiGroups:
   - scanner.zoltankerezsi.xyz
   resources:
   - scanners

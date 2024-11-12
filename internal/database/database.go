@@ -45,7 +45,7 @@ func GetDatabase() (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	if err := db.AutoMigrate(&Hello{}); err != nil {
+	if err := db.AutoMigrate(&ScanResult{}); err != nil {
 		return nil, fmt.Errorf("failed to automigrate database: %w", err)
 	}
 

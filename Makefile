@@ -216,8 +216,40 @@ $(HELMIFY): $(LOCALBIN)
 helm: manifests kustomize helmify
 	$(KUSTOMIZE) build config/default | $(HELMIFY)
 
-##@ Kind
+##@ Misc.
+
+.PHONY: teardown-cluster
+teardown-cluster:
+	kind delete cluster
+
+.PHONY: setup-cluster
+setup-cluster:
+	kind create cluster --config kind-config.yaml
+
+.PHONY: setup-db
+setup-db:
+	kubectl apply -f ./postgres.yaml
 
 .PHONY: kind-load
 kind-load:
 	kind load docker-image ${IMG}
+
+.PHONY: create-namespace
+create-namespace:
+	kubectl create namespace scanner-system
+
+.PHONY: helm-deploy
+helm-deploy:
+	helm install scanner ./chart -n scanner-system
+
+.PHONY: start-scanner
+start-scanner:
+	kubectl apply -f ./config/samples/scanner_v1_scanner.yaml
+
+.PHONY: port-forward
+port-forward:
+	kubectl port-forward service/scanner-chart-controller-manager-api-service -n scanner-system 8000:8000
+
+.PHONY: cycle
+cycle: teardown-cluster setup-cluster setup-db docker-build kind-load create-namespace helm-deploy start-scanner port-forward
+	

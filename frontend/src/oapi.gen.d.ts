@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/hello": {
+    "/scan-results": {
         parameters: {
             query?: never;
             header?: never;
@@ -20,20 +20,113 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description hello respose */
+                /** @description Responds with all ScanResults. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["Hello"];
+                        "application/json": components["schemas"]["ScanResult"][];
                     };
                 };
             };
         };
         put?: never;
-        post?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            responses: {
+                /** @description ScanResult created successfully. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScanResult"];
+                    };
+                };
+                /** @description Invalid input. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/scan-results/{imageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    imageId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Responds with the requested ScanResult. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ScanResult"];
+                    };
+                };
+                /** @description ScanResult not found. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    imageId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description ScanResult deleted successfully. */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -55,7 +148,9 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Opening a websocket connection */
+                /** @description Open a websocket connection which sends ScanResult imageIds when a new object
+                 *     is inserted into the db in order to enable the client to fetch them as soon as possible.
+                 *      */
                 101: {
                     headers: {
                         [name: string]: unknown;
@@ -88,7 +183,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Return the HTML part of the frontend */
+                /** @description Responds with the HTML part of the frontend. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -123,7 +218,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Return the Javascript part of the frontend */
+                /** @description Responds with the Javascript part of the frontend. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -158,7 +253,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Return the CSS part of the frontend */
+                /** @description Responds with the CSS part of the frontend. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -181,9 +276,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        Hello: {
-            /** @example Hello, world! */
-            hello: string;
+        ScanResult: {
+            /** @example alpine@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d */
+            imageId: string;
+            /** @description A big piece of JSON string which should conform to the CycloneDX BOM schema. */
+            report: string;
         };
     };
     responses: never;

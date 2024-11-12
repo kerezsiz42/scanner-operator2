@@ -4,7 +4,7 @@
   "main": "index.tsx",
   "scripts": {
     "build-css": "./node_modules/.bin/tailwindcss -i src/input.css -o output.css",
-    "build-js": "./node_modules/.bin/esbuild src/index.tsx --define:process.env.NODE_ENV=\\\"development\\\" --bundle --outfile=bundle.js",
+    "build-js": "./node_modules/.bin/esbuild src/index.tsx --define:process.env.NODE_ENV=\\\"production\\\" --bundle --outfile=bundle.js",
     "build": "npm run build-css && npm run build-js",
     "gen": "./node_modules/.bin/openapi-typescript ../internal/oapi/oapi_definition.yaml -o ./src/oapi.gen.d.ts"
   },
