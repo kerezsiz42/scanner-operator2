@@ -3,7 +3,9 @@ package service
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
+	"os"
 	"text/template"
 
 	"github.com/kerezsiz42/scanner-operator2/internal/utils"
@@ -21,8 +23,9 @@ type JobObjectServiceInterface interface {
 }
 
 type JobObjectService struct {
-	t       *template.Template
-	decoder runtime.Serializer
+	t                  *template.Template
+	decoder            runtime.Serializer
+	apiServiceHostname string
 }
 
 func NewJobObjectService() (*JobObjectService, error) {
@@ -31,27 +34,29 @@ func NewJobObjectService() (*JobObjectService, error) {
 		return nil, fmt.Errorf("failed to parse job.template.yaml: %w", err)
 	}
 
-	// TODO: check if this is necessary
-	scheme := runtime.NewScheme()
-	if err := batchv1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("failed to add scheme: %w", err)
+	apiServiceHostname := os.Getenv("API_SERVICE_HOSTNAME")
+	if apiServiceHostname == "" {
+		return nil, errors.New("API_SERVICE_HOSTNAME environment variable not set")
 	}
 
 	return &JobObjectService{
-		t:       t,
-		decoder: yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme),
+		t:                  t,
+		decoder:            yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme),
+		apiServiceHostname: apiServiceHostname,
 	}, nil
 }
 
 func (j *JobObjectService) Create(imageID string, namespace string) (*batchv1.Job, error) {
 	jobTemplateVars := struct {
-		ScanName  string
-		ImageID   string
-		Namespace string
+		ScanName           string
+		ImageID            string
+		Namespace          string
+		ApiServiceHostname string
 	}{
-		ScanName:  fmt.Sprintf("scan-%s", utils.GenerateId()),
-		ImageID:   imageID,
-		Namespace: namespace,
+		ScanName:           fmt.Sprintf("scan-%s", utils.GenerateId()),
+		ImageID:            imageID,
+		Namespace:          namespace,
+		ApiServiceHostname: j.apiServiceHostname,
 	}
 
 	var buf bytes.Buffer

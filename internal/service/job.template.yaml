@@ -32,7 +32,7 @@ spec:
         args:
         - |
           echo '{"imageId":"{{.ImageID}}","report":'"$(cat /shared/scan-result.json)"'}\n' > /shared/scan-result.json;
-          curl -X PUT -H 'Content-Type: application/json' -d @/shared/scan-result.json scanner-chart-controller-manager-api-service.scanner-system.svc.cluster.local:8000/scan-results;
+          curl -X PUT -H 'Content-Type: application/json' -d @/shared/scan-result.json {{.ApiServiceHostname}}:8000/scan-results;
         volumeMounts:
         - name: shared
           mountPath: /shared

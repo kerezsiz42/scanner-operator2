@@ -8,7 +8,7 @@ import { ScanResultList } from "./components/ScanResultList";
 function App() {
   return (
     <GlobalStateProvider>
-      <div className="h-full bg-slate-100 flex flex-col">
+      <div className="h-full flex flex-col">
         <Navbar />
         <ScanResultList />
         <Footer />

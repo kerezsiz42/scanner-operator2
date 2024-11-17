@@ -69,6 +69,8 @@ spec:
             value: postgres
           - name: DSN
             value: postgres://user:password@postgres-service.default.svc.cluster.local:5432/db
+          - name: API_SERVICE_HOSTNAME
+            value: scanner-chart-controller-manager-api-service.scanner-system.svc.cluster.local
         name: manager
         securityContext:
           allowPrivilegeEscalation: false

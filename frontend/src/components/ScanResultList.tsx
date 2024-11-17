@@ -20,14 +20,14 @@ export function ScanResultList() {
   );
 
   return (
-    <div className="flex-1">
+    <div className="flex-1 bg-slate-100">
       <main className="max-w-[850px] mx-auto p-3">
         {state.scanResults.map((s) => (
           <div
             key={s.imageId}
             className="p-2 my-4 border rounded border-gray-900 text-gray-900 bg-slate-200 flex flex-col"
           >
-            <div>{s.imageId}</div>
+            <div className="p-1 break-words">{s.imageId}</div>
             <div className="flex justify-end">
               <Button
                 onClick={() =>

@@ -862,6 +862,20 @@ env:
 
 Finishing all these things we can confirm that the necessary dependencies are all installed and configured to work together so we can step over to the next phase of the implementation process.
 
+## Backend Implementation
+
+business logic of the operator
+
+CRUD stands for an API that supports creating, retrieving, updating and deleting a certain resource.
+
+- TEXT datatype can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
+
+```sh
+go get github.com/oapi-codegen/runtime
+```
+
+The reconciler runs on a single thread by default.
+
 ## Frontend Implementation
 
 ### Custom Hook
@@ -892,6 +906,7 @@ export function useSubscriber({ onMessage, onConnection }: UseSubscriberProps) {
 
 ### State Management
 
+TODO: revise
 With the help of `createContext` function we can implement a global state manager which holds and makes available the application's state and a `dispatch` function for state updates for other components. The `GlobalStateProvider` component employs the `useReducer` hook to manage the application's state using `globalReducer`, starting with initialState. Within this provider, two callback functions, `onMessage` and `onConnection`, handle specific events: `onMessage` dispatches an "add" action to add a new item based on incoming messages, and onConnection dispatches a "connection_change" action when the app's connection status changes. These two has to be defined using the `useCallback` hooks to cache them between rerenders, otherwise the `Subscriber` class would be detatched and re-attached repeatedly in an uncontrolled manner. `useSubscriber` hooks into these callbacks, and the provider component passes the context value, allowing child components to access and interact with the global state.
 
 ```tsx
@@ -928,6 +943,7 @@ export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
 };
 ```
 
+TODO: revise
 The initialState includes two properties: `isConnected`, a boolean for connection status, and `scanResults`, an array of scan results. The Action type defines three possible actions: "add" to add new scan results, "remove" to delete a scan result by id, and "connection_change" to update the `isConnected` status. The `globalReducer` function updates the state based on the action type: "connection_change" updates the `isConnected` flag, "add" appends new `ScanResult` items to scanResults and sorts them by id, and "remove" filters out a `ScanResult` by id. This setup allows for flexible and predictable state management, supporting multiple actions that modify the global state in specific ways so the mutation logic is separated from visualization.
 
 ```tsx
@@ -969,22 +985,31 @@ The following image shows the finished UI, where example data (UNIX timestamp) i
 
 ![The Mostly Finished UI](mostly-finished-ui.png)
 
-## Backend Implementation
+kubectl run python-sleep --image=python:latest --restart=Never -- sleep 3600
+kubectl run alpine-sleep --image=alpine:latest --restart=Never -- sleep 3600
 
-business logic of the operator
-
-CRUD stands for an API that supports creating, retrieving, updating and deleting a certain resource.
-
-- TEXT datatype can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
+Then add a label to not scan this image next time and remove from the scanned list:
+kubectl label pod alpine-sleep security-scan=false
 
 ```sh
-go get github.com/oapi-codegen/runtime
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
 ```
+
+```sh
+helm install prometheus prometheus-community/kube-prometheus-stack
+```
+
+- <https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack>
 
 ## Testing and Monitoring using Prometheus
 
 - <https://book.kubebuilder.io/reference/metrics>
 - <https://prometheus.io/docs/guides/go-application/>
+
+TODO: list scan resource. reconciled true
+
+In order to publish metrics and view them on the Prometheus UI, the Prometheus instance would have to be configured to select the Service Monitor instance based on its labels.
 
 ## Other Resources
 

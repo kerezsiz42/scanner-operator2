@@ -18,43 +18,35 @@ package controller
 
 import (
 	"context"
-	"net/http"
-	"os"
 	"slices"
-	"sync"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	scannerv1 "github.com/kerezsiz42/scanner-operator2/api/v1"
-	"github.com/kerezsiz42/scanner-operator2/internal/database"
-	"github.com/kerezsiz42/scanner-operator2/internal/oapi"
-	"github.com/kerezsiz42/scanner-operator2/internal/server"
 	"github.com/kerezsiz42/scanner-operator2/internal/service"
-)
-
-const (
-	SecurityScanLabel      = "security-scan"
-	ScannerSystemNamespace = "scanner-system"
 )
 
 // ScannerReconciler reconciles a Scanner object
 type ScannerReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
-	once             sync.Once
-	scanService      service.ScanServiceInterface
-	jobObjectService service.JobObjectServiceInterface
+	ScanService      service.ScanServiceInterface
+	JobObjectService service.JobObjectServiceInterface
 }
 
 // +kubebuilder:rbac:groups=scanner.zoltankerezsi.xyz,resources=scanners,verbs=get;list;watch;create;update;patch;delete
@@ -75,48 +67,16 @@ type ScannerReconciler struct {
 func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reconcilerLog := log.FromContext(ctx)
 
-	r.once.Do(func() {
-		reconcilerLog.Info("connecting to database")
-		db, err := database.GetDatabase()
-		if err != nil {
-			reconcilerLog.Error(err, "unable to connect to database")
-			os.Exit(1)
-		}
-
-		jobObjectService, err := service.NewJobObjectService()
-		if err != nil {
-			reconcilerLog.Error(err, "unable to create JobObjectService")
-			os.Exit(1)
-		}
-
-		r.jobObjectService = jobObjectService
-		r.scanService = service.NewScanService(db)
-		si := server.NewServer(r.scanService, reconcilerLog)
-		m := http.NewServeMux()
-		s := &http.Server{
-			Handler: oapi.HandlerFromMux(si, m),
-			Addr:    ":8000",
-		}
-
-		go func() {
-			reconcilerLog.Info("starting HTTP server")
-			if err := s.ListenAndServe(); err != http.ErrServerClosed {
-				reconcilerLog.Error(err, "unable to start HTTP server")
-				os.Exit(1)
-			}
-		}()
-	})
-
 	scanner := &scannerv1.Scanner{}
 	if err := r.Get(ctx, req.NamespacedName, scanner); err != nil {
 		reconcilerLog.Error(err, "unable to list scanner resources")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	scanResults, err := r.scanService.ListScanResults()
+	scanResults, err := r.ScanService.ListScanResults()
 	if err != nil {
 		reconcilerLog.Error(err, "failed to list scan results")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
 	}
 
 	scannedImageIDs := []string{}
@@ -124,10 +84,10 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		scannedImageIDs = append(scannedImageIDs, scanResult.ImageID)
 	}
 
-	labelRequirement, err := labels.NewRequirement(SecurityScanLabel, selection.NotEquals, []string{"false"})
+	labelRequirement, err := labels.NewRequirement(scanner.Spec.IgnoreLabel, selection.NotEquals, []string{"true"})
 	if err != nil {
-		reconcilerLog.Error(err, "failed to security scan label requirement")
-		return ctrl.Result{}, nil
+		reconcilerLog.Error(err, "failed to get IgnoreLabel requirement")
+		return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
 	}
 
 	podList := &corev1.PodList{}
@@ -136,7 +96,7 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		LabelSelector: labels.NewSelector().Add(*labelRequirement),
 	}); err != nil {
 		reconcilerLog.Error(err, "failed to list pods")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
 	}
 
 	imageID := ""
@@ -153,7 +113,7 @@ OuterLoop:
 
 	if imageID == "" {
 		reconcilerLog.Info("all images scanned, successfully reconciled")
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, r.nextStatusCondition(ctx, scanner, scannerv1.Reconciled)
 	}
 
 	jobList := &batchv1.JobList{}
@@ -161,34 +121,34 @@ OuterLoop:
 		Namespace: scanner.Namespace,
 	}); err != nil {
 		reconcilerLog.Error(err, "failed to list jobs")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
 	}
 
 	for _, job := range jobList.Items {
 		if job.Status.Succeeded == 0 {
 			reconcilerLog.Info("job is still in progress")
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Waiting)
 		}
 	}
 
-	nextJob, err := r.jobObjectService.Create(imageID, scanner.Namespace)
+	nextJob, err := r.JobObjectService.Create(imageID, scanner.Namespace)
 	if err != nil {
 		reconcilerLog.Error(err, "failed to create job from template")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
 	}
 
 	if err := ctrl.SetControllerReference(scanner, nextJob, r.Scheme); err != nil {
 		reconcilerLog.Error(err, "failed to set controller reference on job")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
 	}
 
 	if err := r.Create(ctx, nextJob); err != nil {
 		reconcilerLog.Error(err, "failed to create job")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
 	}
 
 	reconcilerLog.Info("new job created")
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Scanning)
 }
 
 func (r *ScannerReconciler) mapPodsToRequests(ctx context.Context, pod client.Object) []reconcile.Request {
@@ -205,12 +165,33 @@ func (r *ScannerReconciler) mapPodsToRequests(ctx context.Context, pod client.Ob
 	}
 
 	return []reconcile.Request{}
+
+}
+
+func (r *ScannerReconciler) nextStatusCondition(ctx context.Context, scanner *scannerv1.Scanner, reason scannerv1.StatusReason) error {
+	status := metav1.ConditionFalse
+	if reason == scannerv1.Reconciled {
+		status = metav1.ConditionTrue
+	}
+
+	changed := meta.SetStatusCondition(&scanner.Status.Conditions, metav1.Condition{
+		Type:   "Ready",
+		Status: status,
+		Reason: string(reason),
+	})
+
+	if !changed {
+		return nil
+	}
+
+	return r.Status().Update(ctx, scanner)
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ScannerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&scannerv1.Scanner{}).
+		// This allows a controller to ignore update events where the spec is unchanged, and only the metadata and/or status fields are changed.
+		For(&scannerv1.Scanner{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&batchv1.Job{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.mapPodsToRequests)).
 		Complete(r)

@@ -17,6 +17,7 @@ controllerManager:
         drop:
         - ALL
     env:
+      apiServiceHostname: scanner-chart-controller-manager-api-service.scanner-system.svc.cluster.local
       databaseType: postgres
       dsn: postgres://user:password@postgres-service.default.svc.cluster.local:5432/db
     image:

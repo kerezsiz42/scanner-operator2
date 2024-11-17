@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"net/http"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -37,12 +38,16 @@ import (
 
 	scannerv1 "github.com/kerezsiz42/scanner-operator2/api/v1"
 	"github.com/kerezsiz42/scanner-operator2/internal/controller"
+	"github.com/kerezsiz42/scanner-operator2/internal/database"
+	"github.com/kerezsiz42/scanner-operator2/internal/oapi"
+	"github.com/kerezsiz42/scanner-operator2/internal/server"
+	"github.com/kerezsiz42/scanner-operator2/internal/service"
 	// +kubebuilder:scaffold:imports
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme  = runtime.NewScheme()
+	mainLog = ctrl.Log.WithName("main")
 )
 
 func init() {
@@ -84,7 +89,7 @@ func main() {
 	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
 	// - https://github.com/advisories/GHSA-4374-p667-p6c8
 	disableHTTP2 := func(c *tls.Config) {
-		setupLog.Info("disabling http/2")
+		mainLog.Info("disabling http/2")
 		c.NextProtos = []string{"http/1.1"}
 	}
 
@@ -120,6 +125,36 @@ func main() {
 		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
 	}
 
+	// Custom Logic Start
+	jobObjectService, err := service.NewJobObjectService()
+	if err != nil {
+		mainLog.Error(err, "unable to create JobObjectService")
+		os.Exit(1)
+	}
+
+	mainLog.Info("connecting to database")
+	db, err := database.GetDatabase()
+	if err != nil {
+		mainLog.Error(err, "unable to connect to database")
+		os.Exit(1)
+	}
+
+	scanService := service.NewScanService(db)
+
+	s := &http.Server{
+		Handler: oapi.Handler(server.NewServer(scanService, mainLog)),
+		Addr:    ":8000",
+	}
+
+	go func() {
+		mainLog.Info("starting Scanner API HTTP server")
+		if err := s.ListenAndServe(); err != http.ErrServerClosed {
+			mainLog.Error(err, "unable to start Scanner API HTTP server")
+			os.Exit(1)
+		}
+	}()
+	// Custom Logic End
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -140,31 +175,33 @@ func main() {
 		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		mainLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
 	if err = (&controller.ScannerReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		JobObjectService: jobObjectService,
+		ScanService:      scanService,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Scanner")
+		mainLog.Error(err, "unable to create controller", "controller", "Scanner")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		mainLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		mainLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	mainLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+		mainLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
 }

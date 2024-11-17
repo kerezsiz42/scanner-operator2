@@ -28,6 +28,8 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.databaseType }}
         - name: DSN
           value: {{ quote .Values.controllerManager.manager.env.dsn }}
+        - name: API_SERVICE_HOSTNAME
+          value: {{ quote .Values.controllerManager.manager.env.apiServiceHostname }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
         image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag

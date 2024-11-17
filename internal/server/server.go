@@ -21,59 +21,63 @@ type Server struct {
 	broadcastCh chan string
 	connections map[*websocket.Conn]chan string
 	mu          sync.Mutex
+	once        sync.Once
 }
 
 func NewServer(
 	scanService service.ScanServiceInterface,
 	logger logr.Logger,
 ) *Server {
-	broadcastCh := make(chan string)
-	connections := make(map[*websocket.Conn]chan string)
-
-	go func() {
-		for {
-			message := <-broadcastCh
-
-			for _, ch := range connections {
-				ch <- message
-			}
-		}
-	}()
-
 	return &Server{
 		upgrader:    &websocket.Upgrader{},
 		scanService: scanService,
 		logger:      logger,
-		broadcastCh: broadcastCh,
-		connections: connections,
+		broadcastCh: make(chan string),
+		connections: make(map[*websocket.Conn]chan string),
 		mu:          sync.Mutex{},
 	}
 }
 
 func (s *Server) Get(w http.ResponseWriter, r *http.Request) {
+	defer observeDuration("GET", "/")()
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(frontend.IndexHtml)
 }
 
 func (s *Server) GetBundleJs(w http.ResponseWriter, r *http.Request) {
+	defer observeDuration("GET", "/bundle.js")()
 	w.Header().Set("Content-Type", "text/javascript")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(frontend.BundleJs)
 }
 
 func (s *Server) GetOutputCss(w http.ResponseWriter, r *http.Request) {
+	defer observeDuration("GET", "/output.css")()
 	w.Header().Set("Content-Type", "text/css")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(frontend.OutputCss)
 }
 
 func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
+	defer observeDuration("GET", "/subscribe")()
 	c, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error(err, "GetSubscribe")
 		return
 	}
+
+	s.once.Do(func() {
+		go func() {
+			for {
+				message := <-s.broadcastCh
+
+				for _, ch := range s.connections {
+					ch <- message
+				}
+			}
+		}()
+	})
 
 	defer c.Close()
 
@@ -93,8 +97,7 @@ func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
 
 			data := []byte("\"" + imageId + "\"")
 			if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
-				s.logger.Error(err, "Web")
-				continue
+				s.logger.Error(err, "Websocket")
 			}
 		}
 	}()
@@ -116,6 +119,7 @@ func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) GetScanResults(w http.ResponseWriter, r *http.Request) {
+	defer observeDuration("GET", "/scan-results")()
 	scanResults, err := s.scanService.ListScanResults()
 	if err != nil {
 		s.logger.Error(err, "GetScanResults")
@@ -139,6 +143,7 @@ func (s *Server) GetScanResults(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) PutScanResults(w http.ResponseWriter, r *http.Request) {
+	defer observeDuration("PUT", "/scan-results")()
 	oapiScanResult := oapi.ScanResult{}
 	if err := json.NewDecoder(r.Body).Decode(&oapiScanResult); err != nil {
 		s.logger.Error(err, "PutScanResults")
@@ -173,6 +178,7 @@ func (s *Server) PutScanResults(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) DeleteScanResultsImageId(w http.ResponseWriter, r *http.Request, imageId string) {
+	defer observeDuration("DELETE", "/scan-results/{imageId}")()
 	if err := s.scanService.DeleteScanResult(imageId); err != nil {
 		s.logger.Error(err, "DeleteScanResultsImageId")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -183,6 +189,7 @@ func (s *Server) DeleteScanResultsImageId(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) GetScanResultsImageId(w http.ResponseWriter, r *http.Request, imageId string) {
+	defer observeDuration("GET", "/scan-results/{imageId}")()
 	scanResult, err := s.scanService.GetScanResult(imageId)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		s.logger.Error(err, "GetScanResultsImageId")
