@@ -236,7 +236,7 @@ kind-load:
 
 .PHONY: helm-deploy
 helm-deploy:
-	kubectl create namespace scanner-system; \
+	kubectl create namespace scanner-system
 	helm install scanner ./chart -n scanner-system
 
 .PHONY: start-scanner
@@ -245,8 +245,7 @@ start-scanner:
 
 .PHONY: port-forward
 port-forward:
-	kubectl port-forward service/scanner-chart-controller-manager-api-service -n scanner-system 8000:8000 & \
-	kubectl port-forward service/prometheus-operated -n monitoring 9090:9090 && kill $$!
+	kubectl port-forward service/scanner-chart-controller-manager-api-service -n scanner-system 8000:8000
 
 .PHONY: build-frontend
 build-frontend:
@@ -254,9 +253,10 @@ build-frontend:
 
 .PHONY: setup-prometheus
 setup-prometheus:
-	kubectl create namespace monitoring; \
+	kubectl create namespace monitoring
 	helm install -n monitoring prometheus prometheus-community/kube-prometheus-stack
+	kubectl port-forward service/prometheus-operated -n monitoring 9090:9090
 
 .PHONY: cycle
-cycle: teardown-cluster setup-cluster build-frontend setup-db docker-build kind-load setup-prometheus helm-deploy start-scanner
+cycle: teardown-cluster setup-cluster build-frontend setup-db docker-build kind-load helm-deploy start-scanner
 	

@@ -165,10 +165,13 @@ func (r *ScannerReconciler) mapPodsToRequests(ctx context.Context, pod client.Ob
 	}
 
 	return []reconcile.Request{}
-
 }
 
-func (r *ScannerReconciler) nextStatusCondition(ctx context.Context, scanner *scannerv1.Scanner, reason scannerv1.StatusReason) error {
+func (r *ScannerReconciler) nextStatusCondition(
+	ctx context.Context,
+	scanner *scannerv1.Scanner,
+	reason scannerv1.StatusReason,
+) error {
 	status := metav1.ConditionFalse
 	if reason == scannerv1.Reconciled {
 		status = metav1.ConditionTrue
@@ -190,7 +193,6 @@ func (r *ScannerReconciler) nextStatusCondition(ctx context.Context, scanner *sc
 // SetupWithManager sets up the controller with the Manager.
 func (r *ScannerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		// This allows a controller to ignore update events where the spec is unchanged, and only the metadata and/or status fields are changed.
 		For(&scannerv1.Scanner{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&batchv1.Job{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.mapPodsToRequests)).

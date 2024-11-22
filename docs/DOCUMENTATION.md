@@ -2,9 +2,11 @@
 
 ## Overview
 
-In this article I would like to introduce the reader into the realms of cloud native technologies by showing how one can implement a fully custom operator using Go and Kubebuilder. While I don't consider myself an expert in this field during my internship at Cisco I think acquired enough knowledge to educate others on this matter and hopefully dissolve some misconceptions about its difficulty.
+In this article I would like to introduce the reader into the realms of cloud native technologies by showing how one can implement a fully custom operator using Go and Kubebuilder with a sprikle of React and lots of CLI tools for a fullstack experience. While I don't consider myself an expert in this field during my internship at Cisco I think acquired enough knowledge to show some useful things about this matter and hopefully dissolve some misconceptions about its difficulty.
 
-In order to make this guide more similar the process one would do in reality when meaningful work is needed I would like to concentrate on things that go a bit further than simply achieving a "hello world" type of result.
+In order to make this guide more similar the process one would do in reality when meaningful work is needed I would like to concentrate on things that go a bit further than simply achieving a "hello world" type of result. In this writing we will create an operator that uses Grype to acquire the current state of security of our Kubernetes Cluster.
+
+The source code of the entire project is available on <https://github.com/kerezsiz42/scanner-operator2>.
 
 ## Containerization
 
@@ -40,8 +42,10 @@ An Ingress is a resource used to manage external access to services within a Kub
 
 Controllers in Kubernetes are automations that have access to the Kubernetes API and other resources - often outside the cluster - in order to observe the state of the cluster and act on the changes in accordance with the logic they were implemented with. Operators are basically controllers which define a CRD (custom resource defintion), so they are effectively a way to extend the functionality of Kubernetes.
 
-<https://kubernetes.io/docs/concepts/architecture/controller/>
-<https://konghq.com/blog/learning-center/kubernetes-controllers-vs-operators>
+Read more:
+
+- <https://kubernetes.io/docs/concepts/architecture/controller/>
+- <https://konghq.com/blog/learning-center/kubernetes-controllers-vs-operators>
 
 ## Tooling Setup
 
@@ -71,7 +75,7 @@ version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132
 
 ### Kubebuilder
 
-Kubebuilder is a framework for building Kubernetes APIs using custom resource definitions (CRDs). It streamlines the process of developing Kubernetes controllers by providing a set of tools, libraries, and code generation features. Built on top of the Kubernetes controller-runtime library, it allows developers to create robust, scalable controllers and operators with minimal boilerplate code. It supports best practices like testing, scaffolding, and project layout, making it easier to manage and extend Kubernetes-native applications.
+We wil use Kubebuilder which is a framework for building Kubernetes APIs using custom resource definitions (CRDs). It streamlines the process of developing Kubernetes controllers by providing a set of tools, libraries, and code generation features. Built on top of the Kubernetes controller-runtime library, it allows developers to create robust, scalable controllers and operators with minimal boilerplate code. It supports best practices like testing, scaffolding, and project layout, making it easier to manage and extend Kubernetes-native applications.
 We can download the latest release of Kubebuilder CLI, make it executable and move it into `/usr/local/bin` where user installed binaries are usually stored.
 
 ```sh
@@ -111,7 +115,7 @@ After these steps we will have a scaffold generated in the `internal/controller`
 
 ### Kind
 
-Also, in order to setup a cluster we can use a tool called [kind](https://kind.sigs.k8s.io/) which makes it easy to create a delete Kubernetes clusters and nodes for our development.
+Also, in order to setup a cluster we can use a tool called [kind](https://kind.sigs.k8s.io/) which makes it easy to create and delete Kubernetes clusters and nodes for our development. When using kind the nodes are running as docker containers instead of VMs in the cloud.
 
 ```sh
 go install sigs.k8s.io/kind@v0.24.0
@@ -142,7 +146,7 @@ type ScannerReconciler struct {
 }
 ```
 
-The Kubebuilder team kindly marked as the place where we should put our code, so we will start the HTTP server there. Here we define a single handler function that return the string `"Hello, world!"` and start the server in a `goroutine`, since `http.Server.ListenAndServe()` is a blocking call. We use `os.Exit(1)` together with `log.Error()` instead of `panic()` the same way as in `cmd/main.go` for failures that make further continuation of the process impossible. We intentionally let the process die, since it will be restarted by Deployment anyway. Also, the convention is to start the error messages with lowercase letters. After the first reconciliation is done the HTTP server should be running on port `8000` and the logs of the controller-manager pod should contain the `"successfully reconciled"` message.
+The Kubebuilder team kindly marked as the place where we should put our code, so we will start the HTTP server there. Here we define a single handler function that returns the string `"Hello, world!"` and start the server in a `goroutine`, since `http.Server.ListenAndServe()` is a blocking call. We use `os.Exit(1)` together with `log.Error()` instead of `panic()` the same way as in `cmd/main.go` for failures that make further continuation of the process impossible. We intentionally let the process die, since it will be restarted by Deployment anyway. Also, the convention is to start the error messages with lowercase letters. After the first reconciliation is done the HTTP server should be running on port `8000` and the logs of the controller-manager pod should contain the `"successfully reconciled"` message.
 
 ```go
 // internal/controller/scanner_controller.go
@@ -321,7 +325,7 @@ npm init -y
 npm install esbuild react react-dom @types/react-dom tailwindcss
 ```
 
-- `esbuild` is a fast bundler for Javascript and Typescript which is a superset of Javascript. A bundler is a tool that takes multiple source code files and combines them into one or more depending on the configuration. Before the `import` directive was available, using a bundler was our only choice to ship code with multiple dependencies if we did not want to use global scoped objects as with [JQuery](https://jquery.com/). If you read the whole thesis, I owe you a drink. Now that [module syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) is standardized, it is still useful to bundle our frontend code to minimize the number of network requests the browser has to make in order to gather all of the source files and run our code. The other reason is of course that we use Typescript which is directly not runnable by the browser, so a tranformation step is necessary.
+- [esbuild](https://esbuild.github.io/) is a fast bundler for Javascript and Typescript. A bundler is a tool that takes multiple source code files and combines them into one or more depending on the configuration. Before the `import` directive was available, using a bundler was our only choice to ship code with multiple dependencies if we did not want to use global scoped objects as with [JQuery](https://jquery.com/). If you read the whole thesis, I owe you a drink. Now that [module syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) is standardized, it is still useful to bundle our frontend code to minimize the number of network requests the browser has to make in order to gather all of the source files and run our code. The other reason is of course that we use Typescript which is directly not runnable by the browser, so a tranformation step is necessary.
 - `react`, `react-dom` and `@types/react-dom` are the packages we need to use to have all the necessary components of React for the web when we use Typescript.
 - `tailwindcss` is a [utility first](https://tailwindcss.com/docs/utility-first) CSS compiler that has a purpose similar to a Javascript bundler. Looks for files specified by the pattern in tailwind.config.js and searches for existing Tailwind class names specified in those, in order to include them in the final `output.css`.
 
@@ -379,7 +383,7 @@ With all this done we can confirm that with this setup we can develop a modern U
 
 ## Exploration of the Idea
 
-The goal of this operator is to give constant feedback about the security status of our Kubernetes Cluster. It collects and scans container images using an external tool that can run in a Pod and consequently as a Job. In our test, we will install the custom resource in the default namespace.
+The goal of this operator is to give constant feedback about the security status of our Kubernetes Cluster. It collects and scans container images using an external tool that can run in a Pod and consequently as a Job. In our test, we will install the custom resource in the default namespace.í
 
 The controller-manager will be subscribed to certain events and therefore notified by the Kubernetes API each time a new Pod is started and it will look into the connected database in order to decide if it should start a new scan Job or not. Successful Jobs return their results by calling an endpoint on the REST API that is provided by the operator. The service that connects to the operator deployment can be accessed from the outside either through an ingress or by using port-forwarding.
 
@@ -391,7 +395,11 @@ We will make use of the publisher-subscriber architectural pattern which is an o
 
 ### Grype and CVEs
 
-[Grype](https://github.com/anchore/grype) is a vulnerability scanner for container images and filesystems, which will do essence of the work. A scanning process results in some collection of [CVEs](https://www.cve.org/), which draw our attention to weaknesses in computational logic found in software and hardware components that, when exploited results in a negative impact to confidentiality, integrity, or availability of our product <https://nvd.nist.gov/vuln>.
+We will be using [Grype](https://github.com/anchore/grype) which is a vulnerability scanner for container images and filesystems. It will do essence of the work. A scanning process results in some collection of [CVEs](https://www.cve.org/), which draw our attention to weaknesses in computational logic found in software and hardware components that, when exploited results in a negative impact to confidentiality, integrity, or availability of our product.
+
+More info:
+
+- <https://nvd.nist.gov/vuln>
 
 It supports multiple type of outputs, but from them [OWASP CycloneDX](https://cyclonedx.org/specification/overview/) [SBOM](https://www.cisa.gov/sbom) (software bill of materials) - an object model which shows a nested inventory or a list of ingredients that make up software components - contains probably the most information, so we will use that. Furtunately there is a Go library available to us that supports this format, so we can add it to our project dependencies:
 
@@ -591,6 +599,12 @@ This effectively enables us to call this CLI program through `go run github.com/
 package oapi
 
 //go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=config.yaml oapi_definition.yaml
+```
+
+Nonetheless, we still need to include the runtime library of `oapi-codegen` which contains code that our generated code can make use of.
+
+```sh
+go get github.com/oapi-codegen/runtime
 ```
 
 We can configure it to only generate models out of OpenAPI schemas and the `ServerInterface` with the proper methods that correspond to the paths section in our definition. Running the `make gen` command creates the `oapi.gen.go` file.
@@ -799,7 +813,7 @@ To create a test database that our operator can connect to we can define the fol
 - The service exposes the PostgreSQL container to other services in the cluster via a Kubernetes Service named postgres-service. The service forwards traffic on port `5432` (TCP) to the PostgreSQL pod, enabling access to the database.
 
 ```yaml
-# kubectl apply -f postgres.yaml
+# postgres.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -851,6 +865,7 @@ spec:
 Since we decided to use environment variables to configure the database connection of our operator we will have to add some default values in the `config/manager/manager.yaml` template. Here within the containers definition, we can define an `env` object that contains the necessary default values. Of course after changing this we also have to run the `make helm` command to reflect these changes in the helm chart's `values.yaml` file, which will be the place where the end-user would want to insert their own values.
 
 ```yaml
+# config/manager/manager.yaml
 env:
   - name: DATABASE_TYPE
     value: postgres
@@ -864,25 +879,466 @@ Finishing all these things we can confirm that the necessary dependencies are al
 
 ## Backend Implementation
 
-business logic of the operator
+### The Main Function
+
+At the start we have put some initializing logic into the `Reconcile()` method which is not the best place such cases since the `cmd/main.go` is the actual function that sets up the `ScannerReconciler` struct with the manager. Doing it this way the expressions do not have to be guarded by if statements of `sync.Once` constructs. Here we create a new `JobObjectService` connect to the database and pass the database reference to the newly created `ScanService`. The reconciler will need references of both services in order to list scanned images and launch new scans.
+
+```go
+// cmd/main.go within the main function
+
+jobObjectService, err := service.NewJobObjectService()
+if err != nil {
+  mainLog.Error(err, "unable to create JobObjectService")
+  os.Exit(1)
+}
+
+mainLog.Info("connecting to database")
+db, err := database.GetDatabase()
+if err != nil {
+  mainLog.Error(err, "unable to connect to database")
+  os.Exit(1)
+}
+
+scanService := service.NewScanService(db)
+
+s := &http.Server{
+  Handler: oapi.Handler(server.NewServer(scanService, mainLog)),
+  Addr:    ":8000",
+}
+
+go func() {
+  mainLog.Info("starting Scanner API HTTP server")
+  if err := s.ListenAndServe(); err != http.ErrServerClosed {
+    mainLog.Error(err, "unable to start Scanner API HTTP server")
+    os.Exit(1)
+  }
+}()
+
+// ...
+
+if err = (&controller.ScannerReconciler{
+  Client:           mgr.GetClient(),
+  Scheme:           mgr.GetScheme(),
+  JobObjectService: jobObjectService,
+  ScanService:      scanService,
+}).SetupWithManager(mgr); err != nil {
+  mainLog.Error(err, "unable to create controller", "controller", "Scanner")
+  os.Exit(1)
+}
+```
+
+The `ScannerReconciler` struct is placed into the `internal/controller/scanner_controller.go` file, so the previously mentioned services have to be defined in this one. We can make use of interfaces to promote abstraction and allows us to achive loose coupling of different parts of our codebase. In accordance with Liskov substitution interfaces ensure that derived classes (or implementing types) can be substituted for the interface without affecting correctness, maintaining consistency in behavior. What this all means is that `ScannerReconciler` should not and does not have any insight into the inner workings of its dependencies.
+
+```go
+type ScannerReconciler struct {
+  client.Client
+  Scheme           *runtime.Scheme
+  ScanService      service.ScanServiceInterface
+  JobObjectService service.JobObjectServiceInterface
+}
+```
+
+### Reconcile Loop
+
+The reconciler runs on a single thread by default.
+
+```go
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=list;watch;create
+```
+
+```go
+func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+  reconcilerLog := log.FromContext(ctx)
+
+  scanner := &scannerv1.Scanner{}
+  if err := r.Get(ctx, req.NamespacedName, scanner); err != nil {
+    reconcilerLog.Error(err, "unable to list scanner resources")
+    return ctrl.Result{}, client.IgnoreNotFound(err)
+  }
+
+  scanResults, err := r.ScanService.ListScanResults()
+  if err != nil {
+    reconcilerLog.Error(err, "failed to list scan results")
+    return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+  }
+// ...
+}
+```
+
+```go
+func (r *ScannerReconciler) nextStatusCondition(
+  ctx context.Context,
+  scanner *scannerv1.Scanner,
+  reason scannerv1.StatusReason,
+) error {
+  status := metav1.ConditionFalse
+  if reason == scannerv1.Reconciled {
+    status = metav1.ConditionTrue
+  }
+
+  changed := meta.SetStatusCondition(&scanner.Status.Conditions, metav1.Condition{
+    Type:   "Ready",
+    Status: status,
+    Reason: string(reason),
+  })
+
+  if !changed {
+    return nil
+  }
+
+  return r.Status().Update(ctx, scanner)
+}
+```
+
+```go
+  scannedImageIDs := []string{}
+  for _, scanResult := range scanResults {
+    scannedImageIDs = append(scannedImageIDs, scanResult.ImageID)
+  }
+
+  labelRequirement, err := labels.NewRequirement(scanner.Spec.IgnoreLabel, selection.NotEquals, []string{"true"})
+  if err != nil {
+    reconcilerLog.Error(err, "failed to get IgnoreLabel requirement")
+    return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+  }
+
+  podList := &corev1.PodList{}
+  if err := r.List(ctx, podList, &client.ListOptions{
+    Namespace:     scanner.Namespace,
+    LabelSelector: labels.NewSelector().Add(*labelRequirement),
+  }); err != nil {
+    reconcilerLog.Error(err, "failed to list pods")
+    return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+  }
+```
+
+```go
+  imageID := ""
+OuterLoop:
+  for _, pod := range podList.Items {
+    // TODO: Handle init containers as well
+    for _, containerStatus := range pod.Status.ContainerStatuses {
+      if !slices.Contains(scannedImageIDs, containerStatus.ImageID) {
+        imageID = containerStatus.ImageID
+        break OuterLoop
+      }
+    }
+  }
+
+  if imageID == "" {
+    reconcilerLog.Info("all images scanned, successfully reconciled")
+    return ctrl.Result{RequeueAfter: 10 * time.Second}, r.nextStatusCondition(ctx, scanner, scannerv1.Reconciled)
+  }
+
+```
+
+```go
+jobList := &batchv1.JobList{}
+if err := r.List(ctx, jobList, &client.ListOptions{
+  Namespace: scanner.Namespace,
+}); err != nil {
+  reconcilerLog.Error(err, "failed to list jobs")
+  return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+}
+
+for _, job := range jobList.Items {
+  if job.Status.Succeeded == 0 {
+    reconcilerLog.Info("job is still in progress")
+    return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Waiting)
+  }
+}
+```
+
+```go
+nextJob, err := r.JobObjectService.Create(imageID, scanner.Namespace)
+if err != nil {
+  reconcilerLog.Error(err, "failed to create job from template")
+  return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+}
+
+if err := ctrl.SetControllerReference(scanner, nextJob, r.Scheme); err != nil {
+  reconcilerLog.Error(err, "failed to set controller reference on job")
+  return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+}
+
+if err := r.Create(ctx, nextJob); err != nil {
+  reconcilerLog.Error(err, "failed to create job")
+  return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+}
+
+reconcilerLog.Info("new job created")
+return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Scanning)
+```
+
+This allows a controller to ignore update events where the spec is unchanged, and only the metadata and/or status fields are changed.
+
+```go
+func (r *ScannerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+  return ctrl.NewControllerManagedBy(mgr).
+    For(&scannerv1.Scanner{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+    Owns(&batchv1.Job{}).
+    Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.mapPodsToRequests)).
+    Complete(r)
+}
+```
+
+```go
+func (r *ScannerReconciler) mapPodsToRequests(ctx context.Context, pod client.Object) []reconcile.Request {
+  scannerList := &scannerv1.ScannerList{}
+  if err := r.List(ctx, scannerList, &client.ListOptions{Namespace: pod.GetNamespace()}); err != nil {
+    return []reconcile.Request{}
+  }
+
+  if len(scannerList.Items) > 0 {
+    return []reconcile.Request{{NamespacedName: types.NamespacedName{
+      Name:      scannerList.Items[0].Name,
+      Namespace: scannerList.Items[0].Namespace,
+    }}}
+  }
+
+  return []reconcile.Request{}
+}
+```
+
+### Starting Jobs
+
+- curl
+- go templates
+
+Here we are making use of the ttlSecondsAfterFinished property of jobs. It specifies the time-to-live (TTL) for the resource after it completes execution. Once the job finishes, Kubernetes waits for the defined TTL (in seconds) before automatically deleting the resource, helping to clean up old, unused jobs. This property is particularly useful for managing resource lifecycle and avoiding clutter in the cluster, but it must be enabled in the cluster settings as it is a feature gate. Using this takes the responsibility of deleting jobs away from our operator, but we can still have a look at what went wrong during the specified time. Once the unsucessful job is not present in the Namespace the Scanner operator schedule it again.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: { { .ScanName } }
+  namespace: { { .Namespace } }
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  template:
+    spec:
+      initContainers:
+        - name: grype
+          image: anchore/grype:v0.83.0
+          env:
+            - name: GRYPE_DB_CACHE_DIR
+              value: /grype-db
+          args:
+            - { { .ImageID } }
+            - --output
+            - cyclonedx-json
+            - --file
+            - /shared/scan-result.json
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+            - name: grype-db
+              mountPath: /grype-db
+      containers:
+        - name: alpine
+          image: alpine/curl:8.10.0
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo '{"imageId":"{{.ImageID}}","report":'"$(cat /shared/scan-result.json)"'}\n' > /shared/scan-result.json;
+              curl -X PUT -H 'Content-Type: application/json' -d @/shared/scan-result.json {{.ApiServiceHostname}}:8000/scan-results;
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+      restartPolicy: Never
+      volumes:
+        - name: shared
+          emptyDir: {}
+        - name: grype-db
+          hostPath:
+            path: /grype-db
+```
+
+TODO: why
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: /home/outis/.cache/grype/db
+        containerPath: /grype-db
+```
+
+### HTTP Handlers
+
+TODO: defer
+
+```go
+func (s *Server) PutScanResults(w http.ResponseWriter, r *http.Request) {
+  defer observeDuration("PUT", "/scan-results")()
+  oapiScanResult := oapi.ScanResult{}
+  if err := json.NewDecoder(r.Body).Decode(&oapiScanResult); err != nil {
+    s.logger.Error(err, "PutScanResults")
+    http.Error(w, "Bad Request", http.StatusBadRequest)
+    return
+  }
+
+  scanResult, err := s.scanService.UpsertScanResult(oapiScanResult.ImageId, string(oapiScanResult.Report))
+  if errors.Is(err, service.InvalidCycloneDXBOM) {
+    s.logger.Error(err, "PutScanResults")
+    http.Error(w, "Bad Request", http.StatusBadRequest)
+    return
+  } else if err != nil {
+    s.logger.Error(err, "PutScanResults")
+    http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+    return
+  }
+
+  s.broadcastCh <- scanResult.ImageID
+  s.logger.Info("PutScanResults", "new imageId broadcasted", scanResult.ImageID)
+
+  res := oapi.ScanResult{
+    ImageId: scanResult.ImageID,
+    Report:  json.RawMessage(scanResult.Report),
+  }
+
+  w.Header().Set("Content-Type", "application/json")
+  w.WriteHeader(http.StatusOK)
+  if err := json.NewEncoder(w).Encode(res); err != nil {
+    s.logger.Error(err, "PutScanResults")
+  }
+}
+```
+
+TODO: mutex
+TODO: sync once
+TODO: channels
+TODO: prometheus
+
+```go
+func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
+  defer observeDuration("GET", "/subscribe")()
+  c, err := s.upgrader.Upgrade(w, r, nil)
+  if err != nil {
+    s.logger.Error(err, "GetSubscribe")
+    return
+  }
+
+  s.once.Do(func() {
+    go func() {
+      for {
+        message := <-s.broadcastCh
+
+        for _, ch := range s.connections {
+          ch <- message
+        }
+      }
+    }()
+  })
+
+  defer c.Close()
+
+  ch := make(chan string)
+  defer close(ch)
+
+  s.mu.Lock()
+  s.connections[c] = ch
+  s.mu.Unlock()
+
+  go func() {
+    for {
+      imageId, ok := <-ch
+      if !ok {
+        return
+      }
+
+      data := []byte("\"" + imageId + "\"")
+      if err := c.WriteMessage(websocket.TextMessage, data); err != nil {
+        s.logger.Error(err, "Websocket")
+      }
+    }
+  }()
+
+  for {
+    msgType, _, err := c.ReadMessage()
+    if err != nil {
+      break
+    }
+
+    if msgType == websocket.CloseMessage {
+      break
+    }
+  }
+
+  s.mu.Lock()
+  delete(s.connections, c)
+  s.mu.Unlock()
+}
+```
+
+### Scan Service and Database Model
+
+```go
+type ScanResult struct {
+  ImageID string `gorm:"primarykey;type:TEXT"`
+  Report  string `gorm:"not null;type:TEXT"`
+}
+```
+
+```go
+func (s *ScanService) UpsertScanResult(imageId string, report string) (*database.ScanResult, error) {
+  bom := cyclonedx.BOM{}
+  reader := strings.NewReader(report)
+  decoder := cyclonedx.NewBOMDecoder(reader, cyclonedx.BOMFileFormatJSON)
+  if err := decoder.Decode(&bom); err != nil {
+    return nil, fmt.Errorf("%w: %w", InvalidCycloneDXBOM, err)
+  }
+
+  scanResult := database.ScanResult{
+    ImageID: imageId,
+    Report:  report,
+  }
+
+  res := s.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&scanResult)
+  if res.Error != nil {
+    return nil, fmt.Errorf("error while inserting ScanResult: %w", res.Error)
+  }
+
+  return &scanResult, nil
+}
+```
 
 CRUD stands for an API that supports creating, retrieving, updating and deleting a certain resource.
 
-- TEXT datatype can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
+For simplicity, we can use the TEXT datatype which can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
+
+### Prometheus
+
+Prometheus is an open-source monitoring and alerting tool designed for collecting, storing, and querying metrics from various systems and applications. It uses a time-series database to store metrics data, allowing for analysis of trends and real-time monitoring. We can define a make command so installing [kube-prometheus](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) can be done automatically.
 
 ```sh
-go get github.com/oapi-codegen/runtime
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
 ```
 
-The reconciler runs on a single thread by default.
+```Makefile
+.PHONY: setup-prometheus
+setup-prometheus:
+  kubectl create namespace monitoring
+  helm install -n monitoring prometheus prometheus-community/kube-prometheus-stack
+  kubectl port-forward service/prometheus-operated -n monitoring 9090:9090
+```
+
+Prometheus scrapes metrics from target systems using HTTP endpoints, typically in a specific text-based format. It features a powerful query language called PromQL for data analysis and visualization, often integrated with dashboards like Grafana. Prometheus also includes built-in alerting capabilities, enabling users to define conditions and receive notifications when thresholds are breached.
+
+Enabling Prometheus metrics is as easy as uncommenting the proper section in `config/default/kustomization.yaml` and also add a tag to the already defined `ServiceMonitor` resource so that Prometheus operator can register it. Of course after any modification involving the `config` directory we should regenerate the helm chart.
 
 ## Frontend Implementation
 
 ### Custom Hook
 
-We can create a proper wrapper hook for the `Subscriber` class to make it work well within React components. A React hook is a special function that lets you use React features in functional components, like state and lifecycle methods. Preexisting hooks, such as `useState` and `useEffect`, simplify component logic and enable reusability of stateful behavior across components and are the building blocks that enable use to build more complex components. The convention is to start the name of such function with the 'use' word in order to signal other developers about its nature.
+We can create a proper wrapper hook for the `Subscriber` class to make it work well within React components. A React hook is a special function that lets you use React features in functional components, like state and lifecycle methods. Preexisting hooks, such as `useState` and `useEffect`, simplify component logic and enable reusability of stateful behavior across components and are the building blocks that enable us to build more complex components. The convention is to start the name of such function with the 'use' word in order to signal other developers about its nature.
 
-Our the `useSubscriber` hook is a modified version of the previously showed wrapper around the Subscriber class. It uses the `Subscriber` class to listen to events from a given URL ("/subscribe"). The hook accepts two callback props, `onMessage` and `onConnection`, which are called when respective "message" and "connection" events are triggered, passing along relevant data (e.detail) from each event. Inside the effect, once again an AbortController (ac) is created to allow cancelling and proper termination of the subscription when the component unmounts from the virtual DOM, by calling `ac.abort()` in the cleanup function. The `onMessage` and `onConnection` handlers are passed into the dependency list of `useEffect`, so that the hook is refreshed when the handlers change handlers.
+Our the `useSubscriber` hook is a modified version of the previously showed wrapper around the Subscriber class. It uses the `Subscriber` class to listen to events from a given URL ("/subscribe"). The hook accepts two callback props, `onMessage` and `onConnection`, which are called when respective "message" and "connection" events are triggered, passing along relevant data (e.detail) from each event. Inside the effect, once again an AbortController (ac) is created to allow cancelling and proper termination of the subscription when the component unmounts from the virtual DOM, by calling `ac.abort()` in the cleanup function. The `onMessage` and `onConnection` handlers are passed into the dependency list of `useEffect`, so that the hook is refreshed when the handlers change.
 
 ```tsx
 // frontend/src/hooks/useSubscriber.tsx
@@ -906,8 +1362,14 @@ export function useSubscriber({ onMessage, onConnection }: UseSubscriberProps) {
 
 ### State Management
 
-TODO: revise
-With the help of `createContext` function we can implement a global state manager which holds and makes available the application's state and a `dispatch` function for state updates for other components. The `GlobalStateProvider` component employs the `useReducer` hook to manage the application's state using `globalReducer`, starting with initialState. Within this provider, two callback functions, `onMessage` and `onConnection`, handle specific events: `onMessage` dispatches an "add" action to add a new item based on incoming messages, and onConnection dispatches a "connection_change" action when the app's connection status changes. These two has to be defined using the `useCallback` hooks to cache them between rerenders, otherwise the `Subscriber` class would be detatched and re-attached repeatedly in an uncontrolled manner. `useSubscriber` hooks into these callbacks, and the provider component passes the context value, allowing child components to access and interact with the global state.
+With the help of `createContext` function we can implement a global state manager which holds and makes available the application's state and a `dispatch` function for state updates for other components. The `GlobalStateProvider` component employs the `useReducer` hook to manage the application's state using `globalReducer`, starting with initialState. Within this provider, two callback functions, `onMessage` and `onConnection`, handle specific events:
+
+- `onMessage` dispatches an "add" action to add a new item based on incoming messages
+- `onConnection` fetches all scan result objects from the backend and dispatches a "connection_gained" with the payload when the `Subscriber` instance transitions from offline to online state and a "connection_lost" action when the reverse happens. This way of operation ensures that when online all data shown on the UI is representing the current state of the cluster.
+
+These two functions have to be defined using the `useCallback` hooks to cache them between rerenders, otherwise the `Subscriber` class would be detatched and re-attached repeatedly in an uncontrolled manner. `useSubscriber` hooks into these callbacks, and the provider component passes the context value, allowing child components to access and interact with the global state.
+
+Here we have to use the `encodeURIComponent()` function in order to escape some special characters like forward slash and the at sign, since the imageId contains such characters.
 
 ```tsx
 // frontend/src/components/GlobalState.tsx
@@ -916,19 +1378,37 @@ export const GlobalStateContext = createContext({
   dispatch: (action: Action) => {},
 });
 
+export type GlobalStateProviderProps = PropsWithChildren<{}>;
+
 export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
   const [state, dispatch] = useReducer(globalReducer, initialState);
 
-  const onMessage = useCallback((value: string) => {
-    // TODO: fetch new scanResult
-    const scanResult = { id: value };
-    dispatch({ type: "add", payload: [scanResult] });
-  }, []);
+  const onMessage = useCallback(
+    async (imageId: string) => {
+      const res = await fetch(`/scan-results/${encodeURIComponent(imageId)}`);
+      if (!res.ok) {
+        return;
+      }
+
+      const scanResult = (await res.json()) as ScanResult;
+      dispatch({ type: "add", payload: scanResult });
+    },
+    [dispatch]
+  );
 
   const onConnection = useCallback(
-    (isConnected: boolean) => {
-      // TODO: fetch all scanResults when it gets online again
-      dispatch({ type: "connection_change", isConnected });
+    async (isConnected: boolean) => {
+      if (isConnected) {
+        const res = await fetch(`/scan-results`);
+        if (!res.ok) {
+          return;
+        }
+
+        const scanResults = (await res.json()) as ScanResult[];
+        dispatch({ type: "connection_gained", payload: scanResults });
+      } else {
+        dispatch({ type: "connection_lost" });
+      }
     },
     [dispatch]
   );
@@ -943,75 +1423,137 @@ export const GlobalStateProvider = ({ children }: GlobalStateProviderProps) => {
 };
 ```
 
-TODO: revise
-The initialState includes two properties: `isConnected`, a boolean for connection status, and `scanResults`, an array of scan results. The Action type defines three possible actions: "add" to add new scan results, "remove" to delete a scan result by id, and "connection_change" to update the `isConnected` status. The `globalReducer` function updates the state based on the action type: "connection_change" updates the `isConnected` flag, "add" appends new `ScanResult` items to scanResults and sorts them by id, and "remove" filters out a `ScanResult` by id. This setup allows for flexible and predictable state management, supporting multiple actions that modify the global state in specific ways so the mutation logic is separated from visualization.
+The initialState includes two properties: `isConnected`, a boolean for connection status, and `scanResults`, an array of scan results. The Action type defines four possible actions: "add" to add a new scan result, "remove" to delete a scan result by id, and "connection_gained" with a payload that contains all the currently available scan results and "connection_lost" to show that the subscriber does not have a live connection. The `globalReducer` function derives the next state based on the action type. This setup allows for flexible and predictable state management, supporting multiple actions that modify the global state in specific ways so the mutation logic is separated from visualization. The `ScanResult` type is imported from the `oapi.gen.d.ts` which was generated based upon the OpenAPI schema by `openapi-typescript`.
 
 ```tsx
 // frontend/src/components/GlobalState.tsx
-const initialState = { isConnected: false, scanResults: [] as ScanResult[] };
+const initialState = {
+  isConnected: false,
+  scanResults: [] as ScanResult[],
+};
 type State = typeof initialState;
 type Action =
-  | { type: "add"; payload: ScanResult[] }
-  | { type: "remove"; id: string }
-  | { type: "connection_change"; isConnected: boolean };
+  | { type: "add"; payload: ScanResult }
+  | { type: "remove"; payload: ScanResult["imageId"] }
+  | { type: "connection_gained"; payload: ScanResult[] }
+  | { type: "connection_lost" };
 
 function globalReducer(state: State, action: Action): State {
   switch (action.type) {
-    case "connection_change":
-      return { ...state, isConnected: action.isConnected };
-    case "add":
+    case "connection_lost": {
+      return { ...state, isConnected: false };
+    }
+    case "connection_gained": {
       return {
         ...state,
-        scanResults: [...state.scanResults, ...action.payload].sort((a, b) =>
-          a.id.localeCompare(b.id)
+        isConnected: true,
+        scanResults: action.payload.sort((a, b) =>
+          a.imageId.localeCompare(b.imageId)
         ),
       };
-    case "remove":
+    }
+    case "add": {
+      const index = state.scanResults.findIndex(
+        (item) => item.imageId === action.payload.imageId
+      );
+
+      let scanResults: ScanResult[] = [];
+      if (index !== -1) {
+        scanResults = state.scanResults.map((s, i) =>
+          i === index ? action.payload : s
+        );
+      } else {
+        scanResults = [...state.scanResults, action.payload];
+      }
+
       return {
         ...state,
-        scanResults: state.scanResults.filter((s) => s.id !== action.id),
+        scanResults: scanResults.sort((a, b) =>
+          a.imageId.localeCompare(b.imageId)
+        ),
       };
+    }
+    case "remove": {
+      return {
+        ...state,
+        scanResults: state.scanResults.filter(
+          (s) => s.imageId !== action.payload
+        ),
+      };
+    }
   }
 }
 ```
 
-So accessing and updating global state from within a component is as simple as passing the `GlobalStateContext` into `useContext` within our component.
+So accessing and updating global state from within a component is as simple as passing the `GlobalStateContext` into `useContext` within our component. This is exacly what happens within the `ScanResultList` component.
 
 ```tsx
 const { state, dispatch } = useContext(GlobalStateContext);
 ```
 
-The following image shows the finished UI, where example data (UNIX timestamp) is streamed from the backend and the top bar also shows wether the connecetion is alive or not. For now the buttons do not have functionality.
+The following image shows the finished UI, where the scanner resource was installed in the default namespace and it is in a reconciled state.
 
-![The Mostly Finished UI](mostly-finished-ui.png)
-
-kubectl run python-sleep --image=python:latest --restart=Never -- sleep 3600
-kubectl run alpine-sleep --image=alpine:latest --restart=Never -- sleep 3600
-
-Then add a label to not scan this image next time and remove from the scanned list:
-kubectl label pod alpine-sleep security-scan=false
-
-```sh
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-```
-
-```sh
-helm install prometheus prometheus-community/kube-prometheus-stack
-```
-
-- <https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack>
+![Finished UI](finished-ui.png)
 
 ## Testing and Monitoring using Prometheus
 
-- <https://book.kubebuilder.io/reference/metrics>
-- <https://prometheus.io/docs/guides/go-application/>
+### Manual Flow
+
+During development we can make our job a lot more easier by automating what we can. Makefiles can be used for such purposes too, so we defined a `make cycle` commands which tears down the cluster if it was set up, then recreates it, builds frontend code, starts the postgres database, builds the docker image of the operator, loads the newly buildt image into the kind cluster, deploys the helm chart and applies a scanner resource in the default namespace.
+
+```makefile
+.PHONY: cycle
+cycle: teardown-cluster setup-cluster build-frontend setup-db docker-build kind-load helm-deploy start-scanner
+```
+
+TODO: how did this appear
+
+```sh
+$ kubectl get all
+NAME                            READY   STATUS     RESTARTS   AGE
+pod/postgres-786b469c56-wzx89   1/1     Running    0          99s
+pod/scan-iegy0oylsg-xxl9v       0/1     Init:0/1   0          20s
+
+NAME                       TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+service/kubernetes         ClusterIP   10.96.0.1      <none>        443/TCP    108s
+service/postgres-service   ClusterIP   10.96.40.196   <none>        5432/TCP   99s
+
+NAME                       READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/postgres   1/1     1            1           99s
+
+NAME                                  DESIRED   CURRENT   READY   AGE
+replicaset.apps/postgres-786b469c56   1         1         1       99s
+
+NAME                        STATUS    COMPLETIONS   DURATION   AGE
+job.batch/scan-iegy0oylsg   Running   0/1           20s        20s
+
+NAME                                               IGNORELABEL
+scanner.scanner.zoltankerezsi.xyz/scanner-sample   ignore
+```
+
+To test the whole system, we can start a few pods and wait until they automatically appear on the UI.
+
+```sh
+kubectl run python-sleep --image=python:latest --restart=Never -- sleep 3600
+kubectl run alpine-sleep --image=alpine:latest --restart=Never -- sleep 3600
+```
+
+We can label a specific pod with the `ignore=true`. By clicking the `Delete` button on one of the items it should dissapear from the list, and not be rescheduled again for scanning.
+
+```sh
+kubectl label pod alpine-sleep ignore=true
+```
+
+TODO: describe response image
+
+![Prometheus](prometheus.png)
 
 TODO: list scan resource. reconciled true
 
-In order to publish metrics and view them on the Prometheus UI, the Prometheus instance would have to be configured to select the Service Monitor instance based on its labels.
+With all these tested and working, we can conclude that we are done developing the operator, all three aspect it (controller-manager, backend, and frontend) is functioning correctly in themselves and together.
 
 ## Other Resources
 
-- <https://esbuild.github.io/>
 - <https://maelvls.dev/kubernetes-conditions/>
+- <https://book.kubebuilder.io/reference/metrics>
+- <https://prometheus.io/docs/guides/go-application/>
