@@ -21,19 +21,29 @@ type Server struct {
 	broadcastCh chan string
 	connections map[*websocket.Conn]chan string
 	mu          sync.Mutex
-	once        sync.Once
 }
 
 func NewServer(
 	scanService service.ScanServiceInterface,
 	logger logr.Logger,
 ) *Server {
+	broadcastCh := make(chan string)
+	connections := make(map[*websocket.Conn]chan string)
+	go func() {
+		for {
+			message := <-broadcastCh
+
+			for _, ch := range connections {
+				ch <- message
+			}
+		}
+	}()
 	return &Server{
 		upgrader:    &websocket.Upgrader{},
 		scanService: scanService,
 		logger:      logger,
-		broadcastCh: make(chan string),
-		connections: make(map[*websocket.Conn]chan string),
+		broadcastCh: broadcastCh,
+		connections: connections,
 		mu:          sync.Mutex{},
 	}
 }
@@ -66,18 +76,6 @@ func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error(err, "GetSubscribe")
 		return
 	}
-
-	s.once.Do(func() {
-		go func() {
-			for {
-				message := <-s.broadcastCh
-
-				for _, ch := range s.connections {
-					ch <- message
-				}
-			}
-		}()
-	})
 
 	defer c.Close()
 

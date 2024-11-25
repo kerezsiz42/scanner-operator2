@@ -255,8 +255,8 @@ build-frontend:
 setup-prometheus:
 	kubectl create namespace monitoring
 	helm install -n monitoring prometheus prometheus-community/kube-prometheus-stack
-	kubectl port-forward service/prometheus-operated -n monitoring 9090:9090
+# kubectl port-forward service/prometheus-operated -n monitoring 9090:9090
 
 .PHONY: cycle
-cycle: teardown-cluster setup-cluster build-frontend setup-db docker-build kind-load helm-deploy start-scanner
+cycle: teardown-cluster setup-cluster build-frontend setup-db docker-build kind-load setup-prometheus helm-deploy start-scanner
 	

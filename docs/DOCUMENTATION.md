@@ -6,18 +6,15 @@ In this article I would like to introduce the reader into the realms of cloud na
 
 In order to make this guide more similar the process one would do in reality when meaningful work is needed I would like to concentrate on things that go a bit further than simply achieving a "hello world" type of result. In this writing we will create an operator that uses Grype to acquire the current state of security of our Kubernetes Cluster.
 
-The source code of the entire project is available on <https://github.com/kerezsiz42/scanner-operator2>.
+The source code of the entire project is available on [Githib](https://github.com/kerezsiz42/scanner-operator2)
 
 ## Containerization
 
-Containerization is a lightweight virtualization method that packages applications and their dependencies into self-contained units called containers which enables efficient resource usage, rapid deployment, and easy scaling compared to VMs (virtual machines). The gain over traditional VMs is that the workloads are processes with some lightwight OS (operating system) APIs (application programming interfaces) for compatibility instead of full-blown OSs so this way they share a [common kernel](https://learn.microsoft.com/en-us/virtualization/windowscontainers/about/containers-vs-vm) of the host OS which achieves the benefitial properties.
+Containerization is a lightweight virtualization method that packages applications and their dependencies into self-contained units called containers which enables efficient resource usage, rapid deployment, and easy scaling compared to VMs (virtual machines). The gain over traditional VMs is that the workloads are processes with some lightwight OS (operating system) APIs (application programming interfaces) for compatibility instead of full-blown OSs so this way they share a [common kernel](https://learn.microsoft.com/en-us/virtualization/windowscontainers/about/containers-vs-vm) of the host OS which achieves the benefitial properties. Container are portable between different environments, immutable, and [isolated](https://www.paloaltonetworks.com/cyberpedia/containerization).
 
 ### Kubernetes
 
 It started out as a continuation to [Borg](https://medium.com/containermind/a-new-era-of-container-cluster-management-with-kubernetes-cd0b804e1409) which was Google's original internal Container Cluster Manager which at some point ran most of their systems. Kubernetes is nowadays the most used open source container orchestration tool which provides higher level concepts that Docker or other runtimes that conform to [OCI](https://opencontainers.org/) does not have, namely self-healing, manual and automatic horizontal scaling, load balancing and automated rollouts and rollbacks to name a few. Figuratively speaking it's the navigator for Docker containers hence its name means 'steersman' or 'pilot' (grc: κυβερνήτης).
-
-- <https://www.paloaltonetworks.com/cyberpedia/containerization>
-- <https://kubernetes.io/docs/concepts/overview/#going-back-in-time>
 
 ### Nodes and Clusters
 
@@ -377,29 +374,25 @@ We also define some script in our `package.json` file to document the steps it t
 
 The initial UI looks like the following in it's rendered form.
 
-![Initial rendered UI](initial-ui.png)
+![Initial Rendered UI](initial-ui.png)
 
 With all this done we can confirm that with this setup we can develop a modern UI with a fast and easy to understand iteration loop since all components are configured correctly to get the resulting Javascript, CSS and HTML files.
 
 ## Exploration of the Idea
 
-The goal of this operator is to give constant feedback about the security status of our Kubernetes Cluster. It collects and scans container images using an external tool that can run in a Pod and consequently as a Job. In our test, we will install the custom resource in the default namespace.í
+The goal of this operator is to give constant feedback about the security status of our Kubernetes Cluster. It collects and scans container images using an external tool that can run in a Pod and consequently as a Job. In our test, we will install the custom resource in the default namespace.
 
 The controller-manager will be subscribed to certain events and therefore notified by the Kubernetes API each time a new Pod is started and it will look into the connected database in order to decide if it should start a new scan Job or not. Successful Jobs return their results by calling an endpoint on the REST API that is provided by the operator. The service that connects to the operator deployment can be accessed from the outside either through an ingress or by using port-forwarding.
 
 ![Architecture](architecture.png)
 
-We will make use of the publisher-subscriber architectural pattern which is an often used communication method between components of distributed systems. The advantage of this approach is the loose coupling and scalability it provides and that subscribers will get a faster - almost real-time - notification when an event occurs compared to polling wich would involve the client calling the API repeatedly thereby cause unnecessary traffic. When a client loads the frontend code, it automatically subscribes to scan events by using Websocket. Once such event occurs the client can load the result from the same REST API and display them in a list on the user interface.
+We will make use of the publisher-subscriber architectural pattern which is an often used communication method between components of distributed systems. The advantage of this approach is the loose coupling and scalability it provides and that subscribers will get a faster - almost real-time - notification when an event occurs compared to polling which would involve the client calling the API repeatedly thereby cause unnecessary traffic. When a client loads the frontend code, it automatically subscribes to scan events by using Websocket. Once such event occurs the client can load the result from the same REST API and display them in a list on the user interface.
 
 ![Sequence Diagram](sequence-diagram.png)
 
 ### Grype and CVEs
 
 We will be using [Grype](https://github.com/anchore/grype) which is a vulnerability scanner for container images and filesystems. It will do essence of the work. A scanning process results in some collection of [CVEs](https://www.cve.org/), which draw our attention to weaknesses in computational logic found in software and hardware components that, when exploited results in a negative impact to confidentiality, integrity, or availability of our product.
-
-More info:
-
-- <https://nvd.nist.gov/vuln>
 
 It supports multiple type of outputs, but from them [OWASP CycloneDX](https://cyclonedx.org/specification/overview/) [SBOM](https://www.cisa.gov/sbom) (software bill of materials) - an object model which shows a nested inventory or a list of ingredients that make up software components - contains probably the most information, so we will use that. Furtunately there is a Go library available to us that supports this format, so we can add it to our project dependencies:
 
@@ -431,8 +424,6 @@ kubectl run -it grype --image=anchore/grype -- python # Downloads vulnerability 
 
 Upon further inspection we can see that grype does provide a way to manage its database through subcommands, so this might be an additional responsibility that our operator could be in charge of, but then it might be a better solution to avoid running jobs concurrently. Doing it that way makes throttling unnecessary, because not putting too much processing load on the cluster is also an important aspect of our goal.
 
-<https://stackoverflow.com/questions/62694361/how-to-reference-a-local-volume-in-kind-kubernetes-in-docker>
-
 ### OpenAPI and REST
 
 REST stands for respresentation state transfer and is a set of architectural constraints that makes the job of designers, developers and users of an application programming interface easier by providing a few loose rules to follow. RESTful systems are stateless, cacheable, have a layered structure and when paired with client applications their inner workings are entirely decoupled.
@@ -460,11 +451,9 @@ After installing the new package we can set up an npm script so that we do not h
 
 In this section we will install the remaining dependencies and establish communication between the client and server side, setup and manually test the database connection.
 
-Contrary to my initial plans instead of Webhooks we will use Websockets. The reason for this is the performance gain that a continously open TCP connection can provide over sending new and new HTTP requests for each scanned image to the subscribers. Websocket is bidirectional by nature, but we will use it in a unidirectional way to notify clients about updates.
+Contrary to the initial plans instead of Webhooks we will use Websockets. The reason for this is the performance gain that a continously open TCP connection can provide over sending new and new HTTP requests for each scanned image to the subscribers. Websocket is bidirectional by nature, but we will use it in a unidirectional way to notify clients about updates.
 
 The following component is a facade over Websocket client, which implements automatic reconnection and extends [EventTarget](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) to provide access to its "message" events. Using the `addEventListener` method one can register a callback that can process the incoming `CustomEvent` object as it arrives. The connection can be closed using the web standard [AbortSignal API](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal). It works with the assumption that the publisher will always send JSON strings so it tries to parse the incoming data accoringly.
-
-![Subscriber Class](subscribe-class.png)
 
 ```js
 //@ts-check
@@ -541,6 +530,8 @@ export class Subscriber extends EventTarget {
   }
 }
 ```
+
+![Subscriber Class](subscribe-class.png)
 
 This class is documented using JSDoc type annotations which can be checked using the same Typescript compiler like normal `.ts` files so the two solutions are basically equivalent, except it is a valid `.js` file and the type annotations are comments. As a test, we can define an anonymous function in a `useEffect` hook. We create an AbortController that can be used to emit an abort signal when the component gets unmounted from the DOM and register a function on the "message" event so it prints the content to the console for now.
 
@@ -879,6 +870,8 @@ Finishing all these things we can confirm that the necessary dependencies are al
 
 ## Backend Implementation
 
+In this chapter, we will review the main parts of the implemented operator and explain its purposes.
+
 ### The Main Function
 
 At the start we have put some initializing logic into the `Reconcile()` method which is not the best place such cases since the `cmd/main.go` is the actual function that sets up the `ScannerReconciler` struct with the manager. Doing it this way the expressions do not have to be guarded by if statements of `sync.Once` constructs. Here we create a new `JobObjectService` connect to the database and pass the database reference to the newly created `ScanService`. The reconciler will need references of both services in order to list scanned images and launch new scans.
@@ -940,14 +933,13 @@ type ScannerReconciler struct {
 
 ### Reconcile Loop
 
-The reconciler runs on a single thread by default.
+The Reconcile method is part of the controller logic and is responsible for reconciling the actual state of a Kubernetes resource to match its desired state. It gets triggered when there are changes to the watched resources, taking a ReconcileRequest (identifying the resource) and returning a result or an error. Inside this method, you typically fetch the resource, analyze its current state, and issue Kubernetes API calls to create, update, or delete related objects to achieve the desired state. This loop ensures the system remains self-healing and eventually consistent with the declared specifications.
+
+We start by fetching a Scanner resource identified by the req.NamespacedName and logs an error if the resource cannot be found, returning early if it is not a "not found" error. Then, it interacts with the ScanService to list scan results and logs any errors encountered while doing so. If the ScanService call fails, the code updates the status condition of the Scanner resource to Failed, ensuring the resource's state reflects the issue.
 
 ```go
-// +kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=list;watch;create
-```
+// internal/controller/scanner_controller.go:Reconcile()
 
-```go
 func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
   reconcilerLog := log.FromContext(ctx)
 
@@ -966,7 +958,10 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 ```
 
+We can define a helper method, `nextStatusCondition`, that updates the status condition of a Scanner resource in Kubernetes. It determines the status (True or False) based on the provided reason, defaulting to False unless the reason is Reconciled. It uses `meta.SetStatusCondition` to update the "Ready" condition of the Scanner resource, checking if the condition actually changed. If the condition has changed, it calls `r.Status().Update()` to persist the updated status to the Kubernetes API; otherwise, it does nothing and returns nil. This ensures, that when we send the describe command, we get some feedback about the state of the resource.
+
 ```go
+// internal/controller/scanner_controller.go
 func (r *ScannerReconciler) nextStatusCondition(
   ctx context.Context,
   scanner *scannerv1.Scanner,
@@ -991,49 +986,62 @@ func (r *ScannerReconciler) nextStatusCondition(
 }
 ```
 
+After getting the scanResult data from database, we iterate over scanResults to collect the ImageID values into a slice called scannedImageIDs. Then, it creates a label requirement to exclude pods with the specified IgnoreLabel set to "true", logging an error and marking the Scanner resource as Failed if the requirement creation fails. Next, it retrieves a list of pods from the same namespace as the Scanner resource, applying the label selector created earlier to filter them. If the pod listing fails, the code logs the error and updates the Scanner resource's status to reflect the failure, ensuring proper status handling and resource reconciliation.
+
 ```go
-  scannedImageIDs := []string{}
-  for _, scanResult := range scanResults {
-    scannedImageIDs = append(scannedImageIDs, scanResult.ImageID)
-  }
+// internal/controller/scanner_controller.go:Reconcile()
+// ...
+scannedImageIDs := []string{}
+for _, scanResult := range scanResults {
+  scannedImageIDs = append(scannedImageIDs, scanResult.ImageID)
+}
 
-  labelRequirement, err := labels.NewRequirement(scanner.Spec.IgnoreLabel, selection.NotEquals, []string{"true"})
-  if err != nil {
-    reconcilerLog.Error(err, "failed to get IgnoreLabel requirement")
-    return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
-  }
+labelRequirement, err := labels.NewRequirement(scanner.Spec.IgnoreLabel, selection.NotEquals, []string{"true"})
+if err != nil {
+  reconcilerLog.Error(err, "failed to get IgnoreLabel requirement")
+  return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+}
 
-  podList := &corev1.PodList{}
-  if err := r.List(ctx, podList, &client.ListOptions{
-    Namespace:     scanner.Namespace,
-    LabelSelector: labels.NewSelector().Add(*labelRequirement),
-  }); err != nil {
-    reconcilerLog.Error(err, "failed to list pods")
-    return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
-  }
+podList := &corev1.PodList{}
+if err := r.List(ctx, podList, &client.ListOptions{
+  Namespace:     scanner.Namespace,
+  LabelSelector: labels.NewSelector().Add(*labelRequirement),
+}); err != nil {
+  reconcilerLog.Error(err, "failed to list pods")
+  return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Failed)
+}
+// ...
 ```
 
+The next snippet identifies an unscanned container image by iterating through the pods and their container statuses, comparing the ImageID to the previously scanned image IDs. If an unscanned ImageID is found, it exits both loops early using the labeled OuterLoop. If all container images have already been scanned (imageID == ""), it logs a success message, updates the status of the Scanner resource to Reconciled, and schedules the next reconciliation after 10 seconds. The reconciler runs on a single thread by default, so requests are processed sequentially, avoiding race conditions and ensuring consistency during reconciliation. This design guarantees that only one reconciliation loop modifies a specific resource at a time.
+
 ```go
-  imageID := ""
+// internal/controller/scanner_controller.go:Reconcile()
+// ...
+imageID := ""
 OuterLoop:
-  for _, pod := range podList.Items {
-    // TODO: Handle init containers as well
-    for _, containerStatus := range pod.Status.ContainerStatuses {
-      if !slices.Contains(scannedImageIDs, containerStatus.ImageID) {
-        imageID = containerStatus.ImageID
-        break OuterLoop
-      }
+for _, pod := range podList.Items {
+  // TODO: Handle init containers as well
+  for _, containerStatus := range pod.Status.ContainerStatuses {
+    if !slices.Contains(scannedImageIDs, containerStatus.ImageID) {
+      imageID = containerStatus.ImageID
+      break OuterLoop
     }
   }
+}
 
-  if imageID == "" {
-    reconcilerLog.Info("all images scanned, successfully reconciled")
-    return ctrl.Result{RequeueAfter: 10 * time.Second}, r.nextStatusCondition(ctx, scanner, scannerv1.Reconciled)
-  }
-
+if imageID == "" {
+  reconcilerLog.Info("all images scanned, successfully reconciled")
+  return ctrl.Result{RequeueAfter: 10 * time.Second}, r.nextStatusCondition(ctx, scanner, scannerv1.Reconciled)
+}
+// ...
 ```
 
+Then if listing the jobs fails, the reconciler logs the error and updates the Scanner status to Failed. It then iterates through the jobs, checking if any of them have not yet succeeded (job.Status.Succeeded == 0), indicating that the job is still in progress. If such a job is found, it logs a message and updates the Scanner status to Waiting, then returns.
+
 ```go
+// internal/controller/scanner_controller.go:Reconcile()
+// ...
 jobList := &batchv1.JobList{}
 if err := r.List(ctx, jobList, &client.ListOptions{
   Namespace: scanner.Namespace,
@@ -1048,9 +1056,14 @@ for _, job := range jobList.Items {
     return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Waiting)
   }
 }
+// ...
 ```
 
+After that it calls `JobObjectService.Create()` to generate a Job object for the given imageID in the specified namespace and logs an error if job creation fails, updating the Scanner status to Failed. The controller then sets the Scanner resource as the owner of the job using `SetControllerReference`, ensuring the job is garbage-collected when the Scanner resource is deleted. If the job creation in the cluster fails, it logs the error and updates the Scanner status to Failed. On successful job creation, it logs a success message and updates the Scanner status to Scanning, marking the start of the image scanning process.
+
 ```go
+// internal/controller/scanner_controller.go:Reconcile()
+// ...
 nextJob, err := r.JobObjectService.Create(imageID, scanner.Namespace)
 if err != nil {
   reconcilerLog.Error(err, "failed to create job from template")
@@ -1071,7 +1084,7 @@ reconcilerLog.Info("new job created")
 return ctrl.Result{}, r.nextStatusCondition(ctx, scanner, scannerv1.Scanning)
 ```
 
-This allows a controller to ignore update events where the spec is unchanged, and only the metadata and/or status fields are changed.
+The `predicate.GenerationChangedPredicate{}` allows a controller to ignore update events where the spec is unchanged, and only the metadata and/or status fields are changed. The controller is also configured to track Job resources it owns (Owns), ensuring it reconciles when their status changes. Furthermore, it watches Pod events and maps them to reconciliation requests for Scanner resources using a custom mapping function (mapPodsToRequests).
 
 ```go
 func (r *ScannerReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -1082,6 +1095,15 @@ func (r *ScannerReconciler) SetupWithManager(mgr ctrl.Manager) error {
     Complete(r)
 }
 ```
+
+Along with the controller-manager setup, we will also need to ensure that it possesses the required RBAC (role-based access control) rules watch pods and manage its Jobs. These manifests can be generated by putting the following lines in the `internal/controller/scanner_controller.go` file.
+
+```go
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=list;watch;create
+```
+
+`mapPodsToRequests()` maps pod events to reconcile requests. It lists all Scanner resources in the same namespace as the Pod, returning an empty slice if the list operation fails. If one or more Scanner resources are found, it creates a single reconciliation request for the first Scanner in the list, identified by its name and namespace. If no Scanner resources exist, it simply returns an empty slice, meaning no reconciliation is triggered.
 
 ```go
 func (r *ScannerReconciler) mapPodsToRequests(ctx context.Context, pod client.Object) []reconcile.Request {
@@ -1103,12 +1125,14 @@ func (r *ScannerReconciler) mapPodsToRequests(ctx context.Context, pod client.Ob
 
 ### Starting Jobs
 
-- curl
-- go templates
+Grype is started as an initContainer and once it has done scanning, the output is saved into a temporary shared volume that the next container, `curl` can access.
 
-Here we are making use of the ttlSecondsAfterFinished property of jobs. It specifies the time-to-live (TTL) for the resource after it completes execution. Once the job finishes, Kubernetes waits for the defined TTL (in seconds) before automatically deleting the resource, helping to clean up old, unused jobs. This property is particularly useful for managing resource lifecycle and avoiding clutter in the cluster, but it must be enabled in the cluster settings as it is a feature gate. Using this takes the responsibility of deleting jobs away from our operator, but we can still have a look at what went wrong during the specified time. Once the unsucessful job is not present in the Namespace the Scanner operator schedule it again.
+`curl` is a command-line tool used to transfer data to or from a server using various network protocols like HTTP, HTTPS, FTP, and more. It is widely used to send requests, retrieve responses, and test APIs or web endpoints. With its extensive options, `curl` can handle headers, authentication, cookies, and data payloads for GET, POST, PUT, DELETE, and other HTTP methods. Its simplicity and flexibility make it a favorite for developers and system administrators for debugging and automation. We will harness its capabilities to send the result of grype back to our api through the `ApiServiceHostname`
+
+The `internal/service/job.template.yaml` is parsed as a go template so that certain paramaters like ScanName, Namespace can dynamically changed. Here we are making use of the ttlSecondsAfterFinished property of jobs. It specifies the time-to-live (TTL) for the resource after it completes execution. Once the job finishes, Kubernetes waits for the defined TTL (in seconds) before automatically deleting the resource, helping to clean up old, unused jobs. This property is particularly useful for managing resource lifecycle and avoiding clutter in the cluster, but it must be enabled in the cluster settings as it is a feature gate. Using this takes the responsibility of deleting jobs away from our operator, but we can still have a look at what went wrong during the specified time. Once the unsucessful job is not present in the Namespace the Scanner operator schedule it again.
 
 ```yaml
+# internal/service/job.template.yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -1156,9 +1180,10 @@ spec:
             path: /grype-db
 ```
 
-TODO: why
+Kind can be configured to use a config file on startup that can change the parameters of the cluster. This is very handy, since this allows us to mount the grype database from our host system, so the scan jobs do not have to download it again and again and can use the cached version. After creating the new configuration we can run the `kind create cluster --config kind-config.yaml` command to apply this configuration.
 
 ```yaml
+# kind-config.yaml
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -1170,9 +1195,40 @@ nodes:
 
 ### HTTP Handlers
 
-TODO: defer
+The server package contains the implementation of handlers and Server struct which fits the interface generated by `oapi-codegen`, thereby fitting the schema defined in `internal/oapi/oapi_definition.yaml`. The next snippet defines a NewServer function that initializes and returns a new Server instance for handling scan-related operations and broadcasting updates, so that it can notify clients real-time. It creates a broadcastCh channel for transmitting messages and a connections map to track active WebSocket connections and their respective channels. A goroutine is started to continuously listen for messages on broadcastCh and forward them to all connected clients by iterating through the connections map. The Server is returned with initialized fields, including a WebSocket upgrader, the provided scanService for business logic, and a mutex (mu) for thread-safe access to shared resources.
 
 ```go
+// internal/server/server.go
+func NewServer(
+  scanService service.ScanServiceInterface,
+  logger logr.Logger,
+) *Server {
+  broadcastCh := make(chan string)
+  connections := make(map[*websocket.Conn]chan string)
+  go func() {
+    for {
+      message := <-broadcastCh
+
+      for _, ch := range connections {
+        ch <- message
+      }
+    }
+  }()
+  return &Server{
+    upgrader:    &websocket.Upgrader{},
+    scanService: scanService,
+    logger:      logger,
+    broadcastCh: broadcastCh,
+    connections: connections,
+    mu:          sync.Mutex{},
+  }
+}
+```
+
+Then the PutScanResults HTTP handler is used to receive the payload from the finished Job objects. It starts by observing the duration of the request using a deferred function call, which I will explain more in the next section. The body of the incoming request is decoded into an oapi.ScanResult object (which is generated from the OpenAPI definition), and if decoding fails, it logs the error and responds with a 400 Bad Request. The scan result is then processed through the `UpsertScanResult()` method of the scanService, and specific errors like `InvalidCycloneDXBOM` or general errors are handled with appropriate logging and error responses (400 Bad Request or 500 Internal Server Error). Upon successful processing, the handler broadcasts the ImageID of the scan result to the previously initialized channel for notifiying subscribed clients and logs this event. Finally, it responds with a 200 OK, including the newly upserted scan result in JSON format, and logs any errors that occur during the response encoding.
+
+```go
+// internal/server/server.go
 func (s *Server) PutScanResults(w http.ResponseWriter, r *http.Request) {
   defer observeDuration("PUT", "/scan-results")()
   oapiScanResult := oapi.ScanResult{}
@@ -1209,12 +1265,12 @@ func (s *Server) PutScanResults(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-TODO: mutex
-TODO: sync once
-TODO: channels
-TODO: prometheus
+We implemened this PUT operation in an idempotent way, so that applying the same request multiple times has the same effect as applying it once. In a typical PUT request, the client provides the full representation of the resource to be created or updated, and the server updates or creates the resource accordingly. Regardless of how many times the same request is sent, the resource's state on the server remains consistent, without unintended side effects.
+
+The `GetSubscribe()` handler establishes and manages WebSocket connections for clients subscribing to scan updates. It upgrades an HTTP connection to a WebSocket using `s.upgrader.Upgrade()`, and if the upgrade fails, it logs the error and exits. Once the WebSocket connection is established, it initializes a channel for sending messages to the client and safely adds it to the connections map while ensuring thread safety using a mutex (s.mu). The usage of mutex is necessary here in order to ensure that all connected clients receive all messages at all times, since handlers can run not just asynchronously, but parallel too. A goroutine listens to the channel and sends ImageID updates to the WebSocket client, logging errors if message transmission fails. The handler enters a loop to monitor incoming messages from the client, breaking the loop when the connection is closed or a CloseMessage is received. We rely on `defer` to close both the connection and the channel owned by the client. These few functions well illustrate how to setup, receive and broadcast messages using go's concurrency features.
 
 ```go
+// internal/server/server.go
 func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
   defer observeDuration("GET", "/subscribe")()
   c, err := s.upgrader.Upgrade(w, r, nil)
@@ -1222,18 +1278,6 @@ func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
     s.logger.Error(err, "GetSubscribe")
     return
   }
-
-  s.once.Do(func() {
-    go func() {
-      for {
-        message := <-s.broadcastCh
-
-        for _, ch := range s.connections {
-          ch <- message
-        }
-      }
-    }()
-  })
 
   defer c.Close()
 
@@ -1277,14 +1321,22 @@ func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
 
 ### Scan Service and Database Model
 
+Object-Relational Mappers (ORMs) are tools that simplify database interactions by mapping database tables to programming language objects (structs), reducing the need for manual SQL queries. They improve developer productivity by allowing database operations like creation, retrieval, modification and deletion (CRUD) to be performed using familiar object-oriented syntax, which abstracts away database-specific details. ORMs ensure code readability and maintainability by aligning database logic with the application's structure, reducing boilerplate code. They also provide features like schema migrations, query building, and relationship management, making them ideal for applications with complex data models. However, while convenient, ORMs may sacrifice performance for simplicity, so they're best suited for scenarios where productivity and rapid development are prioritized over raw database efficiency.
+
+For simplicity, we can use the TEXT datatype which can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests. ImageID is used to differentiate the ScanResult objects, so it is used as a primary key within the database. The Report column contains the full CycloneDX BOM output of grype as a JSON string. To register this database model and create the proper columns, we can issue the `db.AutoMigrate(&ScanResult{})` command during the startup of our program.
+
 ```go
+// internal/database/model.go
 type ScanResult struct {
   ImageID string `gorm:"primarykey;type:TEXT"`
   Report  string `gorm:"not null;type:TEXT"`
 }
 ```
 
+The next code snippet defines the UpsertScanResult method, which processes a scan report and stores or updates it in the database. It first decodes the provided report string into a cyclonedx.BOM object using a JSON decoder, validating that the report is in a proper CycloneDX BOM format. If decoding fails, the method returns an error indicating an invalid BOM. A ScanResult object is created with the given imageId and report, which is then upserted into the database using an ON CONFLICT clause to update existing records if a conflict occurs. If the database operation fails, the method returns an error detailing the issue. Upon success, the newly created or updated ScanResult is returned to the caller.
+
 ```go
+// internal/service/scan.go
 func (s *ScanService) UpsertScanResult(imageId string, report string) (*database.ScanResult, error) {
   bom := cyclonedx.BOM{}
   reader := strings.NewReader(report)
@@ -1307,9 +1359,7 @@ func (s *ScanService) UpsertScanResult(imageId string, report string) (*database
 }
 ```
 
-CRUD stands for an API that supports creating, retrieving, updating and deleting a certain resource.
-
-For simplicity, we can use the TEXT datatype which can store a near unlimited number of bytes and is available in postgres, mysql and sqlite too, so it is suitable to store manifests.
+This methods is used in the `PutScanResults()` handler and is called by the curl pod when the Job is finished. With this explaind we reviewd the entire route that the report takes on the backend side of the stack from grype through curl into the handler and then the service.
 
 ### Prometheus
 
@@ -1325,16 +1375,43 @@ helm repo update
 setup-prometheus:
   kubectl create namespace monitoring
   helm install -n monitoring prometheus prometheus-community/kube-prometheus-stack
-  kubectl port-forward service/prometheus-operated -n monitoring 9090:9090
+# kubectl port-forward service/prometheus-operated -n monitoring 9090:9090
 ```
 
 Prometheus scrapes metrics from target systems using HTTP endpoints, typically in a specific text-based format. It features a powerful query language called PromQL for data analysis and visualization, often integrated with dashboards like Grafana. Prometheus also includes built-in alerting capabilities, enabling users to define conditions and receive notifications when thresholds are breached.
 
 Enabling Prometheus metrics is as easy as uncommenting the proper section in `config/default/kustomization.yaml` and also add a tag to the already defined `ServiceMonitor` resource so that Prometheus operator can register it. Of course after any modification involving the `config` directory we should regenerate the helm chart.
 
+Kubernetes already has a metrics registry that we can add new items to using the `MustRegster()` method. The `init()` automatically runs when the package is imported, so it is a perfect place to register our new metric. We are defining a metric called `http_response_duration_seconds` which will be used to store how lon it took the server to respond to each method and path pair, which are called labels. Buckets are the histogram's predefined range of buckets for tracking durations, it divides a range of possible values into intervals, allowing the histogram to count how many observations fall into each interval.
+
+```go
+var httpResponseDuration = prometheus.NewHistogramVec(
+  prometheus.HistogramOpts{
+    Name:    "http_response_duration_seconds",
+    Help:    "Duration of HTTP responses in seconds",
+    Buckets: prometheus.DefBuckets,
+  },
+  []string{"path", "method"},
+)
+
+func init() {
+  metrics.Registry.MustRegister(httpResponseDuration)
+}
+
+func observeDuration(method, handlerPath string) func() {
+  start := time.Now()
+  return func() {
+    duration := time.Since(start).Seconds()
+    httpResponseDuration.WithLabelValues(handlerPath, method).Observe(duration)
+  }
+}
+```
+
+In Go, the `defer` statement schedules a function to be executed after the surrounding function completes, regardless of how it exits (like through a return or panic). Deferred calls are executed in last-in, first-out (LIFO) order, making them useful for cleanup tasks like closing resources. Putting the `defer observeDuration("GET", "/subscribe")()` as the first line of each http handler with the correct method and path ensures that the duration is always observed.
+
 ## Frontend Implementation
 
-### Custom Hook
+### Creating a Custom Hook
 
 We can create a proper wrapper hook for the `Subscriber` class to make it work well within React components. A React hook is a special function that lets you use React features in functional components, like state and lifecycle methods. Preexisting hooks, such as `useState` and `useEffect`, simplify component logic and enable reusability of stateful behavior across components and are the building blocks that enable us to build more complex components. The convention is to start the name of such function with the 'use' word in order to signal other developers about its nature.
 
@@ -1499,14 +1576,21 @@ The following image shows the finished UI, where the scanner resource was instal
 
 ### Manual Flow
 
-During development we can make our job a lot more easier by automating what we can. Makefiles can be used for such purposes too, so we defined a `make cycle` commands which tears down the cluster if it was set up, then recreates it, builds frontend code, starts the postgres database, builds the docker image of the operator, loads the newly buildt image into the kind cluster, deploys the helm chart and applies a scanner resource in the default namespace.
+During development we can make our job a lot more easier by automating what we can. Makefiles can be used for such purposes too, so we defined a `make cycle` commands which tears down the cluster if it was set up, then recreates it, builds frontend code, starts the postgres database, builds the docker image of the operator, loads the newly buildt image into the kind cluster, deploys the prometheus chart, then lastly deploys the helm chart and applies a scanner resource in the default namespace.
 
 ```makefile
 .PHONY: cycle
-cycle: teardown-cluster setup-cluster build-frontend setup-db docker-build kind-load helm-deploy start-scanner
+cycle: teardown-cluster setup-cluster build-frontend setup-db docker-build kind-load setup-prometheus helm-deploy start-scanner
 ```
 
-TODO: how did this appear
+After that we should see the scanner jobs in progress. In the `api/v1/scanner_types.go` file takes place the type definition of our custom resource. Here we can change how it will appear once it is registered in the cluster using the following kubebuilder code generating comments.
+
+```go
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:categories="all"
+// +kubebuilder:printcolumn:name="IgnoreLabel",type=string,JSONPath=`.spec.ignoreLabel`
+```
 
 ```sh
 $ kubectl get all
@@ -1538,22 +1622,42 @@ kubectl run python-sleep --image=python:latest --restart=Never -- sleep 3600
 kubectl run alpine-sleep --image=alpine:latest --restart=Never -- sleep 3600
 ```
 
-We can label a specific pod with the `ignore=true`. By clicking the `Delete` button on one of the items it should dissapear from the list, and not be rescheduled again for scanning.
+Once all images are scanned in the namespace where the scanner is installed its status condition will become "reconciled".
+
+```sh
+$ kubectl describe scanner scanner-sample
+Name:         scanner-sample
+Namespace:    default
+Labels:       app.kubernetes.io/managed-by=kustomize
+              app.kubernetes.io/name=scanner-operator2
+Annotations:  <none>
+API Version:  scanner.zoltankerezsi.xyz/v1
+Kind:         Scanner
+Metadata:
+  Creation Timestamp:  2024-11-23T08:19:36Z
+  Generation:          1
+  Resource Version:    1720
+  UID:                 f6681de3-40af-4274-9554-f2123368eece
+Spec:
+  Ignore Label:  ignore
+Status:
+  Conditions:
+    Last Transition Time:  2024-11-23T08:25:35Z
+    Message:
+    Reason:                Reconciled
+    Status:                True
+    Type:                  Ready
+Events:                    <none>
+```
+
+We can label a specific pod with the `ignore=true`. By clicking the `Delete` button on one of the items it should disappear from the list, and not be rescheduled again for scanning.
 
 ```sh
 kubectl label pod alpine-sleep ignore=true
 ```
 
-TODO: describe response image
+We can use the Prometheus query language to see how long each request took the server to respond, and also get access to the all the other cluster metrics.
 
 ![Prometheus](prometheus.png)
 
-TODO: list scan resource. reconciled true
-
 With all these tested and working, we can conclude that we are done developing the operator, all three aspect it (controller-manager, backend, and frontend) is functioning correctly in themselves and together.
-
-## Other Resources
-
-- <https://maelvls.dev/kubernetes-conditions/>
-- <https://book.kubebuilder.io/reference/metrics>
-- <https://prometheus.io/docs/guides/go-application/>
