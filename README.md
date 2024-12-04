@@ -2,54 +2,53 @@
 
 ## Overview
 
-In this article I would like to introduce the reader into the realms of cloud native technologies by showing how one can implement a fully custom operator using Go and Kubebuilder with a sprikle of React and lots of CLI tools for a fullstack experience. While I don't consider myself an expert in this field during my internship at Cisco I think acquired enough knowledge to show some useful things about this matter and hopefully dissolve some misconceptions about its difficulty.
+In this article, I would like to introduce readers to the realm of cloud-native technologies by demonstrating how to implement a fully custom operator using Go and Kubebuilder, with a sprinkle of React and numerous CLI tools for a full-stack experience. While I don't consider myself an expert in this field, I believe that during my internship at Cisco, I acquired enough knowledge to share some useful insights on this topic and hopefully dispel some misconceptions about its complexity.
 
-In order to make this guide more similar the process one would do in reality when meaningful work is needed I would like to concentrate on things that go a bit further than simply achieving a "hello world" type of result. In this writing we will create an operator that uses Grype to acquire the current state of security of our Kubernetes Cluster.
+To make this guide more reflective of the actual process one would follow when meaningful work is required, I will focus on aspects that go beyond simply achieving a "hello world" type of result. In this writing, we will create an operator that uses Grype to assess the current security status of our Kubernetes cluster.
 
 The source code of the entire project is available on [Github](https://github.com/kerezsiz42/scanner-operator2)
 
 ## Containerization
 
-Containerization is a lightweight virtualization method that packages applications and their dependencies into self-contained units called containers which enables efficient resource usage, rapid deployment, and easy scaling compared to VMs (virtual machines). The gain over traditional VMs is that the workloads are processes with some lightwight OS (operating system) APIs (application programming interfaces) for compatibility instead of full-blown OSs so this way they share a [common kernel](https://learn.microsoft.com/en-us/virtualization/windowscontainers/about/containers-vs-vm) of the host OS which achieves the benefitial properties. Container are portable between different environments, immutable, and [isolated](https://www.paloaltonetworks.com/cyberpedia/containerization).
+Containerization is a lightweight virtualization method that packages applications and their dependencies into self-contained units called containers. This approach enables efficient resource usage, rapid deployment, and easy scaling compared to virtual machines (VMs). The advantage over traditional VMs is that workloads are processes that utilize lightweight operating system (OS) APIs (application programming interfaces) for compatibility, rather than full-fledged operating systems. As a result, they share a [common kernel](https://learn.microsoft.com/en-us/virtualization/windowscontainers/about/containers-vs-vm) with the host OS, which achieves these beneficial properties. Containers are portable between different environments, immutable, and [isolated](https://www.paloaltonetworks.com/cyberpedia/containerization).
 
 ### Kubernetes
 
-It started out as a continuation to [Borg](https://medium.com/containermind/a-new-era-of-container-cluster-management-with-kubernetes-cd0b804e1409) which was Google's original internal Container Cluster Manager which at some point ran most of their systems. Kubernetes is nowadays the most used open source container orchestration tool which provides higher level concepts that Docker or other runtimes that conform to [OCI](https://opencontainers.org/) does not have, namely self-healing, manual and automatic horizontal scaling, load balancing and automated rollouts and rollbacks to name a few. Figuratively speaking it's the navigator for Docker containers hence its name means 'steersman' or 'pilot' (grc: κυβερνήτης).
+It started as a continuation of [Borg](https://medium.com/containermind/a-new-era-of-container-cluster-management-with-kubernetes-cd0b804e1409), which was Google's original internal container cluster manager that, at one point, ran most of their systems. Today, Kubernetes is the most widely used open-source container orchestration tool, providing higher-level concepts that Docker or other runtimes conforming to [OCI](https://opencontainers.org/) do not offer. These concepts include self-healing, manual and automatic horizontal scaling, load balancing, and automated rollouts and rollbacks, to name a few. Figuratively speaking, it serves as the navigator for Docker containers; hence, its name means 'steersman' or 'pilot' (grc: κυβερνήτης).
 
 ### Nodes and Clusters
 
-Nodes are physical or virtual machines that provide computing resources for the Cluster they are part of in order to run applications and services. New Nodes can be added to a Cluster and existing can be removed. Hosted workloads can be arbitrarily moved from one Node to other Nodes when performing maintenance.
-At a minimum, a cluster contains a control plane and one or more compute machines, or nodes. The control plane is responsible for maintaining the desired state of the cluster, such as which applications are running and which container images they use. Nodes actually run the applications and workloads. See: <https://www.redhat.com/en/topics/containers/what-is-a-kubernetes-cluster>
+Nodes are physical or virtual machines that provide computing resources for the cluster they are part of in order to run applications and services. New nodes can be added to a cluster, and existing ones can be removed. Hosted workloads can be moved arbitrarily from one node to other nodes during maintenance.
+
+At a minimum, a cluster contains a control plane and one or more compute machines, or nodes. The control plane is responsible for maintaining the desired state of the cluster, such as which applications are running and which container images they use. Nodes are the ones that actually run the applications and workloads. See: <https://www.redhat.com/en/topics/containers/what-is-a-kubernetes-cluster>
 
 ### Namespace
 
-Namespaces are Cluster-wide unique resources which are used to create a virtual separation between components. The name, namespace and kind triad uniquely identifies every resource within a Cluster. We will take advantage of this later when I discuss about the operator.
+Namespaces are cluster-wide unique resources used to create a virtual separation between components. The name, namespace, and kind triad uniquely identifies every resource within a cluster. We will take advantage of this later when I discuss the operator.
 
 ### Pods, ResplicaSets and Deployments
 
-Pods are arguably the most important resource within Kubernetes, as they incorporate one or more containers which can potentially share storage and network resources. They are considered the smallest deployable unit of computing since Kubernetes does not manage containers alone. Other important resorces are ReplicaSets which make sure that the requested number identical Pods are running at a given time and Deployments which incorporate ReplicaSets and provide mechanisms for rolling updates and rollbacks to minimize the downtime of an application.
+Pods are arguably the most important resource within Kubernetes, as they incorporate one or more containers that can potentially share storage and network resources. They are considered the smallest deployable unit of computing since Kubernetes does not manage containers alone. Other important resources include ReplicaSets, which ensure that the requested number of identical pods are running at a given time, and Deployments, which incorporate ReplicaSets and provide mechanisms for rolling updates and rollbacks to minimize application downtime.
 
 ### Services and Ingress
 
-Each pod has a unique IP address, so if one group of Pods wants to communicate with another, all the other Pods would have to know how to reach them, but the number of Pods can change dynamically due to their ephemeral nature. This problem is solved by the Service resource, using which we can provide a facade or abstraction over a multiple of Pods that are selected by tags.
+Each pod has a unique IP address, so if one group of pods wants to communicate with another, all the other pods must know how to reach them. However, the number of pods can change dynamically due to their ephemeral nature. This problem is solved by the Service resource, which provides a facade or abstraction over multiple pods that are selected by tags.
 
-An Ingress is a resource used to manage external access to services within a Kubernetes cluster, typically for HTTP and HTTPS traffic. It allows you to define rules for routing client requests to the appropriate services, based on hostnames, paths, or other factors. Unlike other methods of exposing services, such as NodePort or LoadBalancer, Ingress consolidates routing rules into a single point of control, which simplifies the management of traffic to multiple services. An Ingress controller, which operates as a reverse proxy, is necessary to implement these rules and manage load balancing, SSL termination, and traffic routing within the cluster.
+An Ingress is a resource used to manage external access to services within a Kubernetes cluster, typically for HTTP and HTTPS traffic. It allows you to define rules for routing client requests to the appropriate services based on hostnames, paths, or other factors. Unlike other methods of exposing services, such as NodePort or LoadBalancer, Ingress consolidates routing rules into a single point of control, simplifying the management of traffic to multiple services. An Ingress controller, which operates as a reverse proxy, is necessary to implement these rules and manage load balancing, SSL termination, and traffic routing within the cluster.
 
 ## Why do we need Operators?
 
-Controllers in Kubernetes are automations that have access to the Kubernetes API and other resources - often outside the cluster - in order to observe the state of the cluster and act on the changes in accordance with the logic they were implemented with. Operators are basically controllers which define a CRD (custom resource defintion), so they are effectively a way to extend the functionality of Kubernetes.
+Controllers in Kubernetes are automations that have access to the Kubernetes API and other resources—often outside the cluster—in order to observe the state of the cluster and act on changes according to the logic with which they were implemented. Operators are essentially controllers that define a CRD (Custom Resource Definition), making them an effective way to extend the functionality of Kubernetes.
 
-Read more:
-
-- <https://kubernetes.io/docs/concepts/architecture/controller/>
-- <https://konghq.com/blog/learning-center/kubernetes-controllers-vs-operators>
+Read more: <https://kubernetes.io/docs/concepts/architecture/controller/>
 
 ## Tooling Setup
 
 ### Go and Kubectl
 
-First we have to make sure we have the most recent stable version of go and kubectl. Kubectl is basically a command line interface tool, with the help of which we can run commands in a given Cluster. In this case, we essentially communicate with the Kubernetes API server component via its the REST protocol.
-Each operating system has its own way of installing and managing these packages, but if you not need the newest version because of a certain new feature then it's more convenient to just rely upon the package provided by your distribution instead of what a dedicated version manager like [gvm](https://github.com/moovweb/gvm) can provide. As long as the positives don't outweigh the amount of extra work we have to put into managing things, we should go with the default option for simplicity.
+First, we need to ensure that we have the most recent stable versions of Go and kubectl. Kubectl is essentially a command-line interface tool that allows us to run commands in a given cluster. In this case, we communicate with the Kubernetes API server component via its REST protocol.
+
+Each operating system has its own method for installing and managing these packages, but if you do not need the newest version due to a specific new feature, it is more convenient to rely on the package provided by your distribution rather than what a dedicated version manager like [gvm](https://github.com/moovweb/gvm) can offer. As long as the benefits do not outweigh the extra work required to manage things, we should opt for the default option for simplicity.
 
 ```sh
 $ go version
@@ -72,8 +71,9 @@ version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132
 
 ### Kubebuilder
 
-We wil use Kubebuilder which is a framework for building Kubernetes APIs using custom resource definitions (CRDs). It streamlines the process of developing Kubernetes controllers by providing a set of tools, libraries, and code generation features. Built on top of the Kubernetes controller-runtime library, it allows developers to create robust, scalable controllers and operators with minimal boilerplate code. It supports best practices like testing, scaffolding, and project layout, making it easier to manage and extend Kubernetes-native applications.
-We can download the latest release of Kubebuilder CLI, make it executable and move it into `/usr/local/bin` where user installed binaries are usually stored.
+We will use Kubebuilder, which is a framework for building Kubernetes APIs using custom resource definitions (CRDs). It streamlines the process of developing Kubernetes controllers by providing a set of tools, libraries, and code generation features. Built on top of the Kubernetes controller-runtime library, it enables developers to create robust, scalable controllers and operators with minimal boilerplate code. It supports best practices such as testing, scaffolding, and project layout, making it easier to manage and extend Kubernetes-native applications.
+
+We can download the latest release of the Kubebuilder CLI, make it executable, and move it into `/usr/local/bin`, where user-installed binaries are typically stored.
 
 ```sh
 curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
@@ -96,7 +96,7 @@ printf '\nexport PATH="$(go env GOPATH)/bin:$PATH"\n' >> ~/.zshrc
 exec zsh # Reinitializing our shell in order to make this change effectful
 ```
 
-After that we can initialize a new project with a domain name of our choice and a github repository URL which will be the name of our Go moudle that we will be working on.
+After that we can initialize a new project with a domain name of our choice and a github repository URL which will be the name of our Go module that we will be working on.
 
 ```sh
 kubebuilder init --domain zoltankerezsi.xyz --repo github.com/kerezsiz42/scanner-operator2
@@ -108,11 +108,11 @@ Then we create an API with a group, version and kind name.
 kubebuilder create api --group scanner --version v1 --kind Scanner
 ```
 
-After these steps we will have a scaffold generated in the `internal/controller` folder for us. The two most important methods are the `Reconciler` and the `SetupWithManager` which we will take a more in depth look at later.
+After these steps, we will have a scaffold generated in the `internal/controller` folder for us. The two most important methods are the `Reconciler` and the `SetupWithManager`, which we will examine in more depth later.
 
 ### Kind
 
-Also, in order to setup a cluster we can use a tool called [kind](https://kind.sigs.k8s.io/) which makes it easy to create and delete Kubernetes clusters and nodes for our development. When using kind the nodes are running as docker containers instead of VMs in the cloud.
+Additionally, to set up a cluster, we can use a tool called [kind](https://kind.sigs.k8s.io/), which makes it easy to create and delete Kubernetes clusters and nodes for our development. When using kind, the nodes run as Docker containers instead of virtual machines in the cloud.
 
 ```sh
 go install sigs.k8s.io/kind@v0.24.0
@@ -131,7 +131,7 @@ CoreDNS is running at https://127.0.0.1:37675/api/v1/namespaces/kube-system/serv
 
 ### Implementing new Logic
 
-We can modify the `ScannerReconciler` structure and its methods to implement our initial testing logic, explore the workings of `kubebuilder` and to get familiar with the development workflow. Firstly, as we will need a separate HTTP API outside the one used for metrics, we can add a `http.Server` field to the `ScannerReconciler` struct which is zero-initialized (which in this case means that it will be `nil` in the begining).
+We can modify the `ScannerReconciler` structure and its methods to implement our initial testing logic, explore the workings of `kubebuilder`, and become familiar with the development workflow. Firstly, since we will need a separate HTTP API outside of the one used for metrics, we can add an `http.Server` field to the `ScannerReconciler` struct, which will be zero-initialized (meaning it will be `nil` at the beginning).
 
 ```go
 // internal/controller/scanner_controller.go
@@ -143,7 +143,7 @@ type ScannerReconciler struct {
 }
 ```
 
-The Kubebuilder team kindly marked as the place where we should put our code, so we will start the HTTP server there. Here we define a single handler function that returns the string `"Hello, world!"` and start the server in a `goroutine`, since `http.Server.ListenAndServe()` is a blocking call. We use `os.Exit(1)` together with `log.Error()` instead of `panic()` the same way as in `cmd/main.go` for failures that make further continuation of the process impossible. We intentionally let the process die, since it will be restarted by Deployment anyway. Also, the convention is to start the error messages with lowercase letters. After the first reconciliation is done the HTTP server should be running on port `8000` and the logs of the controller-manager pod should contain the `"successfully reconciled"` message.
+The Kubebuilder team has kindly marked the place where we should put our code, so we will start the HTTP server there. Here, we define a single handler function that returns the string `"Hello, world!"` and start the server in a `goroutine`, since `http.Server.ListenAndServe()` is a blocking call. We use `os.Exit(1)` together with `log.Error()` instead of `panic()`, just as in `cmd/main.go`, for failures that make further continuation of the process impossible. We intentionally allow the process to die, as it will be restarted by the Deployment anyway. Additionally, the convention is to start error messages with lowercase letters. After the first reconciliation is complete, the HTTP server should be running on port `8000`, and the logs of the controller-manager pod should contain the `"successfully reconciled"` message.
 
 ```go
 // internal/controller/scanner_controller.go
@@ -178,9 +178,9 @@ func (r *ScannerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 ### Kustomize
 
-Kustomize is a tool for customizing Kubernetes configurations. It allows us to generate resources from other resources and setting cross-cutting fields for resources along with composing and customizing collections of resources as documented on the official [Kubernetes docs website](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/#overview-of-kustomize). It is used here to make a more concise version of the Kubernetes resource files by minimizing the amount of copied parts thereby simplifing maintenance. In this project the `config` folder is full of such resource definitions.
+Kustomize is a tool for customizing Kubernetes configurations. It allows us to generate resources from other resources and set cross-cutting fields for resources, along with composing and customizing collections of resources, as documented on the official [Kubernetes docs website](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/#overview-of-kustomize). It is used here to create a more concise version of the Kubernetes resource files by minimizing the amount of duplicated content, thereby simplifying maintenance. In this project, the `config` folder is filled with such resource definitions.
 
-In the `config/default/kustomization.yaml` file we can set the namespace where the controller resources will be placed and a name prefix for these resources. Furthermore the `resources` section contains references to other kustomization files that will need to processed such as the RBAC (role based access control) rules and the CRD itself. Even though we will only have a single instance of the controller-manager, it is still a good practice to create a Service for it. To achieve that we will create a new file named `config/default/api_service.yaml` and add it to the kustomization resources. The final service looks like the following:
+In the `config/default/kustomization.yaml` file, we can set the namespace where the controller resources will be placed and a name prefix for these resources. Furthermore, the `resources` section contains references to other kustomization files that will need to be processed, such as the RBAC (Role-Based Access Control) rules and the CRD itself. Even though we will only have a single instance of the controller-manager, it is still good practice to create a Service for it. To achieve this, we will create a new file named `config/default/api_service.yaml` and add it to the kustomization resources. The final service looks like the following:
 
 ```yaml
 apiVersion: v1
@@ -206,7 +206,7 @@ So thanks to kustomize name will be prefixed with `scanner-` and the namespace w
 
 ### Development Workflow
 
-We can change the default `imagePullPolicy` from `Always` to `IfNotPresent` implicitly by changing the image tag to `dev` instead of `latest` in our Makefile. Doing this will prevent Kubernetes to always try to pull the image when we run `make deploy` later. We will also set a proper Github Container Registry address, so that later we can push the built image there to be used by the packaged version of our software.
+We can change the default `imagePullPolicy` from `Always` to `IfNotPresent` implicitly by changing the image tag from `latest` to `dev` in our Makefile. Doing this will prevent Kubernetes from always trying to pull the image when we run `make deploy` later. We will also set a proper GitHub Container Registry address so that we can push the built image there to be used by the packaged version of our software.
 
 ```Makefile
 IMG ?= ghcr.io/kerezsiz42/scanner-operator2:dev
@@ -229,7 +229,7 @@ make deploy # Deploy or redeploy all resources that are needed for the newest ve
 kubectl api-resources --verbs=list -o name | grep scanner
 ```
 
-After this there should be pod a named scanner-controller-manager with `Running` status, along with the new service we just defined, the metric service, deployment and replicaset.
+After this, there should be a pod named `scanner-controller-manager` with a `Running` status, along with the new service we just defined, the metrics service, deployment, and replicaset.
 
 ```sh
 $ kubectl get all -n scanner-system
@@ -247,7 +247,7 @@ NAME                                                    DESIRED   CURRENT   READ
 replicaset.apps/scanner-controller-manager-777b874846   1         1         1       25m
 ```
 
-We can access the logs outputted by the controller-manager using the `kubectl logs` command. Once we made sure the controller-manager pod is running properly, we can apply our new scanner resource described in the file at `config/samples/scanner_v1_scanner.yaml`. Then to manually test the API we will use the `kubectl port-forward` command to make the previously defined service accessible on our host machine.
+We can access the logs outputted by the controller-manager using the `kubectl logs` command. Once we have ensured that the controller-manager pod is running properly, we can apply our new scanner resource described in the file at `config/samples/scanner_v1_scanner.yaml`. Then, to manually test the API, we will use the `kubectl port-forward` command to make the previously defined service accessible on our host machine.
 
 ```sh
 kubectl apply -f config/samples/scanner_v1_scanner.yaml
@@ -263,9 +263,9 @@ Hello, world!
 
 ### Helm and Helmify
 
-Helm is today the industry standard package manager for Kubernetes, so we will use this to create our packaged operator that can later be downloaded deployed and undeployed in a Kubernetes namespace similarly to [Istio](https://istio.io/latest/docs/ambient/install/helm/) without the need of the source code and running `make install` and `make deploy` manually on every change.
+Helm is currently the industry standard package manager for Kubernetes, so we will use it to create our packaged operator that can later be downloaded, deployed, and undeployed in a Kubernetes namespace, similar to [Istio](https://istio.io/latest/docs/ambient/install/helm/), without the need for the source code or manually running `make install` and `make deploy` on every change.
 
-[Helmify](https://github.com/arttor/helmify) is a tool that creates Helm charts from Kubernetes manifests (the yaml files). When running `make helm` it generates a helm chart in the `chart` directory of our repository. Our work here consists of copying the right Makefile commands from the documentation and running them appropriately when we create a new version of our software.
+[Helmify](https://github.com/arttor/helmify) is a tool that creates Helm charts from Kubernetes manifests (the YAML files). When running `make helm`, it generates a Helm chart in the `chart` directory of our repository. Our task here consists of copying the appropriate Makefile commands from the documentation and executing them correctly when we create a new version of our software.
 
 ```Makefile
 .PHONY: helm
@@ -273,7 +273,7 @@ helm: manifests kustomize helmify
   $(KUSTOMIZE) build config/default | $(HELMIFY)
 ```
 
-After this we should be able to try out the deployment using helm. In order to start with a clean slate, we can recreate the cluster and create manually the new scanner-system namespace which will be used by the chart, and install it there. Of course kind does not have access to the docker image so we will have to load it again.
+After this, we should be able to try out the deployment using Helm. To start with a clean slate, we can recreate the cluster and manually create the new `scanner-system` namespace, which will be used by the chart, and install it there. Of course, kind does not have access to the Docker image, so we will need to load it again.
 
 ```sh
 make helm # Generate the up-to-date helm chart within the ./char folder
@@ -284,7 +284,7 @@ kubectl create namespace scanner-system
 helm install scanner ./chart -n scanner-system # Or "helm install scanner --repo https://github.com/kerezsiz42/scanner-operator2/tree/main/chart -n scanner-system"
 ```
 
-We can verify that it is working the same way as before and call the base endpoint that replies with the `"Hello, world!"` message exactly how we programmed.
+We can verify that it is working the same way as before by calling the base endpoint, which replies with the `"Hello, world!"` message exactly as we programmed.
 
 ```sh
 kubectl apply -f config/samples/scanner_v1_scanner.yaml
@@ -293,7 +293,7 @@ $ curl localhost:8000
 Hello, world!
 ```
 
-To remove the deployment we run the `helm uninstall` command, and optionally remove the namespace too. By using helm we can potentially make use of its many benefits, which are dependency management, release management and parameterization. All these features are necessary to consider our project ready for industrial use.
+To remove the deployment, we run the `helm uninstall` command and can optionally remove the namespace as well. By using Helm, we can take advantage of its many benefits, including dependency management, release management, and parameterization. All these features are essential for considering our project ready for industrial use.
 
 ```sh
 helm uninstall scanner -n scanner-system
@@ -302,18 +302,18 @@ kubectl delete namespace scanner-system
 
 ## Setting up the Frontend Development Environment
 
-The UI that we assemble here is considered to be the test or proof that the operator does what it has to and with a reasonable performance. Discussing this here might be considered a deviation from the original goal, but for the sake of testing it might still be worth implementing a proper UI.
+The UI that we assemble here is considered a test or proof that the operator functions as intended and performs reasonably well. Discussing this may be seen as a deviation from the original goal, but for the sake of testing, it might still be worthwhile to implement a proper UI.
 
-For simplicity's sake, I choose to develop this UI using React, since the tooling around it is very mature. Also, we will be using Node instead of the newer more modern javascript runtimes like Bun or Deno. These are functionally mostly compatible with Node but there could still be some rough edges or surprizing hardships when you are trying to achieve an exact result, or at least this is true at the time of this writing.
+For simplicity, I have chosen to develop this UI using React, as the tooling around it is very mature. Additionally, we will be using Node instead of newer, more modern JavaScript runtimes like Bun or Deno. While these are mostly functionally compatible with Node, there could still be some rough edges or surprising challenges when trying to achieve an exact result, at least as of the time of this writing.
 
-Node can also be installed with the preferred version manager like [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm). I will be using the latest release at the time of writing this document.
+Node can also be installed using a preferred version manager like [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm). I will be using the latest release available at the time of writing this document.
 
 ```sh
 $ node --version
 v22.6.0
 ```
 
-First thing we should do is to initialize the project within the a frontend directory and install the necessary dependencies using npm.
+The first thing we should do is initialize the project within a frontend directory and install the necessary dependencies using npm.
 
 ```sh
 mkdir frontend
@@ -322,11 +322,13 @@ npm init -y
 npm install esbuild react react-dom @types/react-dom tailwindcss
 ```
 
-- [esbuild](https://esbuild.github.io/) is a fast bundler for Javascript and Typescript. A bundler is a tool that takes multiple source code files and combines them into one or more depending on the configuration. Before the `import` directive was available, using a bundler was our only choice to ship code with multiple dependencies if we did not want to use global scoped objects as with [JQuery](https://jquery.com/). If you read the whole thesis, I owe you a drink. Now that [module syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) is standardized, it is still useful to bundle our frontend code to minimize the number of network requests the browser has to make in order to gather all of the source files and run our code. The other reason is of course that we use Typescript which is directly not runnable by the browser, so a tranformation step is necessary.
-- `react`, `react-dom` and `@types/react-dom` are the packages we need to use to have all the necessary components of React for the web when we use Typescript.
-- `tailwindcss` is a [utility first](https://tailwindcss.com/docs/utility-first) CSS compiler that has a purpose similar to a Javascript bundler. Looks for files specified by the pattern in tailwind.config.js and searches for existing Tailwind class names specified in those, in order to include them in the final `output.css`.
+- [esbuild](https://esbuild.github.io/) is a fast bundler for JavaScript and TypeScript. A bundler is a tool that takes multiple source code files and combines them into one or more files, depending on the configuration. Before the `import` directive was available, using a bundler was our only option for shipping code with multiple dependencies if we did not want to use globally scoped objects, as with [jQuery](https://jquery.com/). Now that [module syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules) is standardized, it is still useful to bundle our frontend code to minimize the number of network requests the browser has to make to gather all the source files and run our code. Another reason is, of course, that we use TypeScript, which is not directly runnable by the browser, so a transformation step is necessary.
 
-After that, we create the entrypoint of our single page application, the `index.html` file. The `<script />` tag together with the defer keyword is used to load the compiled frontend code witch will take over the `<div />` element which has the id of `app`, once the complete html file has been received and attached to the DOM. Cascading style sheets are loaded too using the `<link />` tag within `<head />`.
+- `react`, `react-dom`, and `@types/react-dom` are the packages we need to use to have all the necessary components of React for the web when using TypeScript.
+
+- `tailwindcss` is a [utility-first](https://tailwindcss.com/docs/utility-first) CSS compiler that serves a purpose similar to that of a JavaScript bundler. It looks for files specified by the pattern in `tailwind.config.js` and searches for existing Tailwind class names specified in those files in order to include them in the final `output.css`.
+
+After that, we create the entry point of our single-page application, the `index.html` file. The `<script />` tag, together with the `defer` keyword, is used to load the compiled frontend code, which will take over the `<div />` element with the id of `app` once the complete HTML file has been received and attached to the DOM. Cascading style sheets are also loaded using the `<link />` tag within the `<head />`.
 
 ```html
 <!DOCTYPE html>
@@ -343,7 +345,7 @@ After that, we create the entrypoint of our single page application, the `index.
 </html>
 ```
 
-The initial version of our client-side code to test our frontend setup looks like the following.
+The initial version of our client-side code to test our frontend setup looks like the following:
 
 ```tsx
 import * as React from "react";
@@ -360,7 +362,7 @@ function App() {
 root.render(<App />);
 ```
 
-We also define some script in our `package.json` file to document the steps it takes to build the final javascript and CSS files which can later be copied and served using a HTTP server. Here we are using the "production" `NODE_ENV` enviroment variable which instructs the bundler to omit program code that would enable us to attach certain debugging tools like the React Developer Tools that makes browsers aware of reacts internal state and behavior. This value can be changed back anytime for debugging purposes.
+We also define some scripts in our `package.json` file to document the steps required to build the final JavaScript and CSS files, which can later be copied and served using an HTTP server. Here, we are using the "production" `NODE_ENV` environment variable, which instructs the bundler to omit program code that would allow us to attach certain debugging tools, such as the React Developer Tools, which make browsers aware of React's internal state and behavior. This value can be changed back at any time for debugging purposes.
 
 ```json
 {
@@ -372,29 +374,29 @@ We also define some script in our `package.json` file to document the steps it t
 }
 ```
 
-The initial UI looks like the following in it's rendered form.
+The initial UI looks like the following in it's rendered form:
 
 ![Initial Rendered UI](docs/initial-ui.png)
 
-With all this done we can confirm that with this setup we can develop a modern UI with a fast and easy to understand iteration loop since all components are configured correctly to get the resulting Javascript, CSS and HTML files.
+With all this done, we can confirm that with this setup, we can develop a modern UI with a fast and easy-to-understand iteration loop, as all components are configured correctly to generate the resulting JavaScript, CSS, and HTML files.
 
 ## Exploration of the Idea
 
-The goal of this operator is to give constant feedback about the security status of our Kubernetes Cluster. It collects and scans container images using an external tool that can run in a Pod and consequently as a Job. In our test, we will install the custom resource in the default namespace.
+The goal of this operator is to provide constant feedback about the security status of our Kubernetes cluster. It collects and scans container images using an external tool that can run in a Pod and, consequently, as a Job. In our test, we will install the custom resource in the default namespace.
 
-The controller-manager will be subscribed to certain events and therefore notified by the Kubernetes API each time a new Pod is started and it will look into the connected database in order to decide if it should start a new scan Job or not. Successful Jobs return their results by calling an endpoint on the REST API that is provided by the operator. The service that connects to the operator deployment can be accessed from the outside either through an ingress or by using port-forwarding.
+The controller-manager will be subscribed to certain events and will therefore be notified by the Kubernetes API each time a new Pod is started. It will check the connected database to determine whether it should start a new scan Job. Successful Jobs return their results by calling an endpoint on the REST API provided by the operator. The service that connects to the operator deployment can be accessed from the outside either through an ingress or by using port-forwarding.
 
 ![Architecture](docs/architecture.png)
 
-We will make use of the publisher-subscriber architectural pattern which is an often used communication method between components of distributed systems. The advantage of this approach is the loose coupling and scalability it provides and that subscribers will get a faster - almost real-time - notification when an event occurs compared to polling which would involve the client calling the API repeatedly thereby cause unnecessary traffic. When a client loads the frontend code, it automatically subscribes to scan events by using Websocket. Once such event occurs the client can load the result from the same REST API and display them in a list on the user interface.
+We will utilize the publisher-subscriber architectural pattern, which is a commonly used communication method between components of distributed systems. The advantage of this approach is the loose coupling and scalability it provides, as well as the fact that subscribers receive faster—almost real-time—notifications when an event occurs, compared to polling, which would involve the client repeatedly calling the API and causing unnecessary traffic. When a client loads the frontend code, it automatically subscribes to scan events using WebSocket. Once such an event occurs, the client can load the results from the same REST API and display them in a list on the user interface.
 
 ![Sequence Diagram](docs/sequence-diagram.png)
 
 ### Grype and CVEs
 
-We will be using [Grype](https://github.com/anchore/grype) which is a vulnerability scanner for container images and filesystems. It will do essence of the work. A scanning process results in some collection of [CVEs](https://www.cve.org/), which draw our attention to weaknesses in computational logic found in software and hardware components that, when exploited results in a negative impact to confidentiality, integrity, or availability of our product.
+We will be using [Grype](https://github.com/anchore/grype), which is a vulnerability scanner for container images and filesystems. It will handle the essence of the work. The scanning process results in a collection of [CVEs](https://www.cve.org/), which highlight weaknesses in computational logic found in software and hardware components that, when exploited, can negatively impact the confidentiality, integrity, or availability of our product.
 
-It supports multiple type of outputs, but from them [OWASP CycloneDX](https://cyclonedx.org/specification/overview/) [SBOM](https://www.cisa.gov/sbom) (software bill of materials) - an object model which shows a nested inventory or a list of ingredients that make up software components - contains probably the most information, so we will use that. Furtunately there is a Go library available to us that supports this format, so we can add it to our project dependencies:
+Grype supports multiple types of outputs, but among them, [OWASP CycloneDX](https://cyclonedx.org/specification/overview/) [SBOM](https://www.cisa.gov/sbom) (software bill of materials)—an object model that shows a nested inventory or list of ingredients that make up software components—contains probably the most information, so we will use that. Fortunately, there is a Go library available to us that supports this format, so we can add it to our project dependencies:
 
 ```sh
 go get github.com/CycloneDX/cyclonedx-go
@@ -414,7 +416,7 @@ Syft Version:        v1.14.0
 Supported DB Schema: 5
 ```
 
-When trying Grype multiple times using a kubernetes Pod a potential pitfall becomes obvious: grype has to download its vulnerability database in each pod before performing the scan, which becomes an average 30 second long delay for each scan instead of a single initial delay. This is very wasteful. Trying the same with the local CLI does not produce the same issue, since this database is cached in the filesystem, although running two at the same time scans before a database is present results in the failure of both.
+When trying Grype multiple times using a Kubernetes Pod, a potential pitfall becomes obvious: Grype has to download its vulnerability database in each pod before performing the scan, resulting in an average delay of 30 seconds for each scan instead of a single initial delay. This is very wasteful. Attempting the same with the local CLI does not produce the same issue, as this database is cached in the filesystem. However, running two scans simultaneously before the database is present results in the failure of both.
 
 ```sh
 kubectl run -it grype --image=anchore/grype -- python
@@ -422,21 +424,21 @@ kubectl delete pod grype
 kubectl run -it grype --image=anchore/grype -- python # Downloads vulnerability db again
 ```
 
-Upon further inspection we can see that grype does provide a way to manage its database through subcommands, so this might be an additional responsibility that our operator could be in charge of, but then it might be a better solution to avoid running jobs concurrently. Doing it that way makes throttling unnecessary, because not putting too much processing load on the cluster is also an important aspect of our goal.
+Upon further inspection, we can see that Grype does provide a way to manage its database through subcommands, so this might be an additional responsibility that our operator could take on. However, it may be a better solution to avoid running jobs concurrently. Doing it this way makes throttling unnecessary, as not putting too much processing load on the cluster is also an important aspect of our goal.
 
 ### OpenAPI and REST
 
-REST stands for respresentation state transfer and is a set of architectural constraints that makes the job of designers, developers and users of an application programming interface easier by providing a few loose rules to follow. RESTful systems are stateless, cacheable, have a layered structure and when paired with client applications their inner workings are entirely decoupled.
+REST stands for Representational State Transfer and is a set of architectural constraints that makes the job of designers, developers, and users of an application programming interface easier by providing a few loose rules to follow. RESTful systems are stateless, cacheable, have a layered structure, and, when paired with client applications, their inner workings are entirely decoupled.
 
-In order to comply with today's standards we implement the Backend API using [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen/) which is a tool that allows us to generate boilerplate go code out of an OpenAPI 3.0 definition (here `oapi_definition.yaml`). This way we can spend more time developing our business logic.
+To comply with today's standards, we implement the Backend API using [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen/), which is a tool that allows us to generate boilerplate Go code from an OpenAPI 3.0 definition (here `oapi_definition.yaml`). This way, we can spend more time developing our business logic.
 
-There also exists a client-side code generator for Typescript ([openapi-ts](https://openapi-ts.dev/introduction)) along with a matching HTTP client, but since the API will be very simple, we will only install the code generator to automatically generate the reponse objects for us that we can later arbitrarily place anywhere.
+There is also a client-side code generator for TypeScript ([openapi-ts](https://openapi-ts.dev/introduction)) along with a matching HTTP client, but since the API will be very simple, we will only install the code generator to automatically generate the response objects for us, which we can later place anywhere as needed.
 
 ```sh
 npm i openapi-typescript
 ```
 
-After installing the new package we can set up an npm script so that we do not have to remember the command every time:
+After installing the new package we can set up an npm script, so that we do not have to remember the command every time:
 
 ```json
 // package.json
@@ -449,9 +451,9 @@ After installing the new package we can set up an npm script so that we do not h
 
 ## Synchronizing Front- and Backend Functionality
 
-In this section we will install the remaining dependencies and establish communication between the client and server side, setup and manually test the database connection.
+In this section, we will install the remaining dependencies and establish communication between the client and server side, as well as set up and manually test the database connection.
 
-Contrary to the initial plans instead of Webhooks we will use Websockets. The reason for this is the performance gain that a continously open TCP connection can provide over sending new and new HTTP requests for each scanned image to the subscribers. Websocket is bidirectional by nature, but we will use it in a unidirectional way to notify clients about updates.
+Contrary to the initial plans, we will use WebSockets instead of Webhooks. The reason for this is the performance gain that a continuously open TCP connection can provide over sending new HTTP requests for each scanned image to the subscribers. WebSocket is bidirectional by nature, but we will use it in a unidirectional way to notify clients about updates.
 
 ```js
 //@ts-check
@@ -529,11 +531,11 @@ export class Subscriber extends EventTarget {
 }
 ```
 
-This component is a facade over Websocket client, which implements automatic reconnection and extends [EventTarget](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) to provide access to its "message" events. Using the `addEventListener` method one can register a callback that can process the incoming `CustomEvent` object as it arrives. The connection can be closed using the web standard [AbortSignal API](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal). It works with the assumption that the publisher will always send JSON strings so it tries to parse the incoming data accoringly.
+This component is a facade over the WebSocket client, which implements automatic reconnection and extends [EventTarget](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget) to provide access to its "message" events. Using the `addEventListener` method, one can register a callback that processes the incoming `CustomEvent` object as it arrives. The connection can be closed using the web standard [AbortSignal API](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal). It operates under the assumption that the publisher will always send JSON strings, so it attempts to parse the incoming data accordingly.
 
 ![Subscriber Class](docs/subscriber-class.png)
 
-This class is documented using JSDoc type annotations which can be checked using the same Typescript compiler like normal `.ts` files so the two solutions are basically equivalent, except it is a valid `.js` file and the type annotations are comments. As a test, we can define an anonymous function in a `useEffect` hook. We create an AbortController that can be used to emit an abort signal when the component gets unmounted from the DOM and register a function on the "message" event so it prints the content to the console for now.
+This class is documented using JSDoc type annotations, which can be checked using the same TypeScript compiler as normal `.ts` files, so the two solutions are essentially equivalent, except that it is a valid `.js` file and the type annotations are comments. As a test, we can define an anonymous function in a `useEffect` hook. We create an AbortController that can be used to emit an abort signal when the component is unmounted from the DOM and register a function for the "message" event so that it prints the content to the console for now.
 
 ```tsx
 // frontend/src/index.tsx
@@ -548,13 +550,13 @@ useEffect(() => {
 }, []);
 ```
 
-On the client side fortunately all modern browsers implement this feature, but since the Go standard library does not implement a Websocket server we need to introduce a new dependency: Gorilla Websocket
+On the client side, fortunately, all modern browsers implement this feature. However, since the Go standard library does not include a WebSocket server, we need to introduce a new dependency: Gorilla WebSocket.
 
 ```sh
 go get github.com/gorilla/websocket
 ```
 
-We can create a new package and its folder called `oapi` within the `internal` folder next to the controller, which will serve as a place to store everything that concerns itself with OpenAPI and the code generation itself.
+We can create a new package and its folder called `oapi` within the `internal` folder, next to the controller, which will serve as a place to store everything related to OpenAPI and the code generation itself.
 
 ```sh
 $ tree internal/oapi
@@ -568,7 +570,7 @@ internal/oapi
 1 directory, 5 files
 ```
 
-Here we are using the recommended 'tools go' approach, which means that instead of installing the `oapi-codegen` code generator as a binary external to our program we introduce it into the version control system of `go.mod` in order to manage it as a dependency alongside our core application.
+Here, we are using the recommended 'tools go' approach, which means that instead of installing the `oapi-codegen` code generator as a binary external to our program, we introduce it into the version control system of `go.mod` to manage it as a dependency alongside our core application.
 
 ```go
 // internal/oapi/oapi.go
@@ -583,7 +585,7 @@ import (
 )
 ```
 
-This effectively enables us to call this CLI program through `go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` with the `--config` parameter and the path to our definition. In the `generate.go` we make use of the `go:generate` directive and Go's metaprogramming capabilities, which means that we can write program code using program code. This process is ran by the programmer before compilation or build time in other words during development.
+This effectively enables us to call this CLI program through `go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen` with the `--config` parameter and the path to our definition. In `generate.go`, we make use of the `go:generate` directive and Go's metaprogramming capabilities, which means that we can write program code using program code. This process is run by the programmer before compilation or build time, in other words, during development.
 
 ```go
 // internal/oapi/generate.go
@@ -598,7 +600,7 @@ Nonetheless, we still need to include the runtime library of `oapi-codegen` whic
 go get github.com/oapi-codegen/runtime
 ```
 
-We can configure it to only generate models out of OpenAPI schemas and the `ServerInterface` with the proper methods that correspond to the paths section in our definition. Running the `make gen` command creates the `oapi.gen.go` file.
+We can configure it to generate only models from OpenAPI schemas and the `ServerInterface` with the appropriate methods that correspond to the paths section in our definition. Running the `make gen` command creates the `oapi.gen.go` file.
 
 ```yaml
 # internal/oapi/config.yaml
@@ -609,7 +611,7 @@ generate:
 output: oapi.gen.go
 ```
 
-First we define a new API endpoint in our OpenAPI 3.0 specification. The info section provides metadata, including the API version (1.0.0) and the title (Scanner Operator API). Under paths, the root path (/) is defined with a GET operation. The response for a successful GET request (HTTP status 200) is specified to return HTML content, with the content type as text/html, and the response schema being a simple string. We will create such definitions for all of our endpoints including the WebSocket too. A great resource that can help us when specifying such definitions is the official [Swagger](https://swagger.io/docs/specification/v3_0/describing-parameters/) documentation website.
+First, we define a new API endpoint in our OpenAPI 3.0 specification. The info section provides metadata, including the API version (1.0.0) and the title (Scanner Operator API). Under paths, the root path (/) is defined with a GET operation. The response for a successful GET request (HTTP status 200) is specified to return HTML content, with the content type set to text/html, and the response schema being a simple string. We will create such definitions for all of our endpoints, including the WebSocket as well. A great resource that can help us when specifying these definitions is the official [Swagger](https://swagger.io/docs/specification/v3_0/describing-parameters/) documentation website.
 
 ```yaml
 # internal/oapi/oapi_definition.yaml
@@ -630,7 +632,7 @@ paths:
 # ...
 ```
 
-Once the new `oapi.gen.go` file is created we can make use of these `structs` and methods in our implementation class. Go's type safety ensures that in our implementation all methods are defined in accordance with the generated `ServerInterface`. I case our implementation is incorrect the compiler wil show the type mismatch at `oapi.HandlerFromMux()` where the server implementation is used.
+Once the new `oapi.gen.go` file is created, we can make use of these `structs` and methods in our implementation class. Go's type safety ensures that in our implementation, all methods are defined in accordance with the generated `ServerInterface`. If our implementation is incorrect, the compiler will show a type mismatch at `oapi.HandlerFromMux()`, where the server implementation is used.
 
 ```go
 // internal/server/server.go
@@ -657,9 +659,9 @@ func (s *Server) Get(w http.ResponseWriter, r *http.Request) {
 // ...
 ```
 
-Go modules are created by a go.mod file which contain the module path, which - as generated by kubebuilder - the github repo path to our project. This way other modules can reference and download ours through github in order to use it. Modules contain packages (the folders) and packages contain the source files. Source files within a package have shared scope, so one file can access constants, variables, functions and structs without additional importing.
+Go modules are created by a `go.mod` file, which contains the module path—the GitHub repository path to our project, as generated by Kubebuilder. This allows other modules to reference and download ours through GitHub in order to use it. Modules contain packages (the folders), and packages contain the source files. Source files within a package have shared scope, so one file can access constants, variables, functions, and structs without additional importing.
 
-Static files can be built into the binary as byte slices using the embed package, which is one of Go's unique features. We can place the `embed.go` file into the `frontend` folder, and reference these variables under the frontend package name in `internal/server` where we will build them into HTTP response handlers.
+Static files can be built into the binary as byte slices using the embed package, which is one of Go's unique features. We can place the `embed.go` file into the `frontend` folder and reference these variables under the frontend package name in `internal/server`, where we will build them into HTTP response handlers.
 
 ```go
 // frontend/embed.go
@@ -677,7 +679,7 @@ var IndexHtml []byte
 var OutputCss []byte
 ```
 
-Of course all source files should be added to the final build so we will have to make sure these a are copied or added in the `Dockerfile` properly.
+Of course all source files should be added to the final build, so we will have to make sure these are copied or added in the `Dockerfile` properly.
 
 ```Dockerfile
 # ...
@@ -688,7 +690,7 @@ COPY frontend/embed.go frontend/embed.go
 # ...
 ```
 
-To the the WebSocket connection we can define `GetSubscribe`, which handles WebSocket connections for a server. It upgrades an HTTP request to a WebSocket connection using `s.upgrader.Upgrade`, and if an error occurs, it logs the error and exits. Once the connection is successfully established, the function enters a loop where it sends the message "hello" to the client every 3 seconds using `c.WriteMessage`. If writing to the WebSocket connection fails, it logs the error and breaks the loop. The connection is closed once the function completes, thanks to the `defer c.Close()` statement.
+To handle the WebSocket connection, we can define `GetSubscribe`, which manages WebSocket connections for a server. It upgrades an HTTP request to a WebSocket connection using `s.upgrader.Upgrade`, and if an error occurs, it logs the error and exits. Once the connection is successfully established, the function enters a loop where it sends the message "hello" to the client every 3 seconds using `c.WriteMessage`. If writing to the WebSocket connection fails, it logs the error and breaks the loop. The connection is closed once the function completes, thanks to the `defer c.Close()` statement.
 
 ```go
 // internal/server/server.go
@@ -716,7 +718,7 @@ func (s *Server) GetSubscribe(w http.ResponseWriter, r *http.Request) {
 
 ### Setting Up the Database Connection
 
-In order to keep the project simple we are not going to implement complex database migration capabilites, so ![Gorm](https://gorm.io/)'s `AutoMigrate` is more than enough. Essentially we check on every startup if the database is clean and follow through with the migration. Otherwise the service return an error that the end-user would eventually see.
+In order to keep the project simple, we are not going to implement complex database migration capabilities, so [Gorm](https://gorm.io/)’s `AutoMigrate` is more than sufficient. Essentially, we check on every startup if the database is clean and proceed with the migration. Otherwise, the service returns an error that the end user would eventually see.
 
 ```go
 // internal/database/dataabse.go
@@ -742,9 +744,9 @@ func GetDatabase() (*gorm.DB, error) {
 }
 ```
 
-Here the `GetDialector` is just a switch construct that based on string comparison returns the correct dialector instance - the component that defines what type of sql database Gorm will communicate with. Another thing to note, is that the `GetDatabase` also accesses the `DATABASE_TYPE` and the `DSN` (data source name) environment variables internally.
+Here, the `GetDialector` is simply a switch construct that, based on string comparison, returns the appropriate dialector instance—the component that defines the type of SQL database with which Gorm will communicate. Another point to note is that the `GetDatabase` function also accesses the `DATABASE_TYPE` and `DSN` (data source name) environment variables internally.
 
-We also have to make sure the Gorm library and the drivers that we plan to use with are all installed:
+We also need to ensure that the Gorm library and the drivers we plan to use are all installed:
 
 ```sh
 go get -u gorm.io/gorm
@@ -755,7 +757,7 @@ go get -u gorm.io/driver/postgres
 
 ### Testing the Current Setup
 
-After these modifications the `Reconcile` method checks if the database connection (r.Db) is nil, it tries to establish one using database.GetDatabase() and exits if it fails. Similarly, if the HTTP server (r.Server) is not running, it creates a new server instance and starts it asynchronously. Errors during server startup are logged, and the application exits if the server cannot be started. If both components are successfully initialized, the method logs a successful reconciliation and returns without errors.
+After these modifications, the `Reconcile` method checks if the database connection (r.Db) is nil. If it is, it attempts to establish a connection using database.GetDatabase() and exits if the attempt fails. Similarly, if the HTTP server (r.Server) is not running, it creates a new server instance and starts it asynchronously. Errors that occur during server startup are logged, and the application exits if the server cannot be started. If both components are successfully initialized, the method logs a successful reconciliation and returns without errors.
 
 ```go
 // internal/controller/scanner_controller.go
@@ -853,7 +855,7 @@ spec:
       targetPort: 5432
 ```
 
-Since we decided to use environment variables to configure the database connection of our operator we will have to add some default values in the `config/manager/manager.yaml` template. Here within the containers definition, we can define an `env` object that contains the necessary default values. Of course after changing this we also have to run the `make helm` command to reflect these changes in the helm chart's `values.yaml` file, which will be the place where the end-user would want to insert their own values.
+Since we decided to use environment variables to configure the database connection for our operator, we will need to add some default values in the `config/manager/manager.yaml` template. Within the containers definition, we can define an `env` object that contains the necessary default values. After making this change, we also need to run the `make helm` command to reflect these updates in the Helm chart's `values.yaml` file, which is where the end user will want to insert their own values.
 
 ```yaml
 # config/manager/manager.yaml
@@ -866,7 +868,7 @@ env:
 
 ![Database and WebSocket Setup](docs/database-websocket-setup.png)
 
-Finishing all these things we can confirm that the necessary dependencies are all installed and configured to work together so we can step over to the next phase of the implementation process.
+Finishing all these things we can confirm that the necessary dependencies are all installed and configured to work together, so we can step over to the next phase of the implementation process.
 
 ## Backend Implementation
 
@@ -1037,7 +1039,7 @@ if imageID == "" {
 // ...
 ```
 
-Then if listing the jobs fails, the reconciler logs the error and updates the Scanner status to Failed. It then iterates through the jobs, checking if any of them have not yet succeeded (job.Status.Succeeded == 0), indicating that the job is still in progress. If such a job is found, it logs a message and updates the Scanner status to Waiting, then returns.
+Then if listing the jobs fails, the reconciler logs the error and updates the Scanner status to Failed. It then iterates through the Jobs, checking if any of them have not yet succeeded (job.Status.Succeeded == 0), indicating that the Job is still in progress. If such a Job is found, it logs a message and updates the Scanner status to "Waiting", then returns.
 
 ```go
 // internal/controller/scanner_controller.go:Reconcile()
@@ -1059,7 +1061,7 @@ for _, job := range jobList.Items {
 // ...
 ```
 
-After that it calls `JobObjectService.Create()` to generate a Job object for the given imageID in the specified namespace and logs an error if job creation fails, updating the Scanner status to Failed. The controller then sets the Scanner resource as the owner of the job using `SetControllerReference`, ensuring the job is garbage-collected when the Scanner resource is deleted. If the job creation in the cluster fails, it logs the error and updates the Scanner status to Failed. On successful job creation, it logs a success message and updates the Scanner status to Scanning, marking the start of the image scanning process.
+After that it calls `JobObjectService.Create()` to generate a Job object for the given imageID in the specified namespace and logs an error if Job creation fails, updating the Scanner status to "Failed". The controller then sets the Scanner resource as the owner of the job using `SetControllerReference`, ensuring the job is garbage-collected when the Scanner resource is deleted. If the job creation in the cluster fails, it logs the error and updates the Scanner status to "Failed". On successful Job creation, it logs a success message and updates the Scanner status to "Scanning", marking the start of the image scanning process.
 
 ```go
 // internal/controller/scanner_controller.go:Reconcile()
@@ -1096,7 +1098,7 @@ func (r *ScannerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 ```
 
-Along with the controller-manager setup, we will also need to ensure that it possesses the required RBAC (role-based access control) rules watch pods and manage its Jobs. These manifests can be generated by putting the following lines in the `internal/controller/scanner_controller.go` file.
+Along with the controller-manager setup, we also need to ensure that it has the required RBAC (role-based access control) rules to watch pods and manage its Jobs. These manifests can be generated by adding the following lines to the `internal/controller/scanner_controller.go` file.
 
 ```go
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list;watch
@@ -1129,7 +1131,7 @@ Grype is started as an initContainer and once it has done scanning, the output i
 
 `curl` is a command-line tool used to transfer data to or from a server using various network protocols like HTTP, HTTPS, FTP, and more. It is widely used to send requests, retrieve responses, and test APIs or web endpoints. With its extensive options, `curl` can handle headers, authentication, cookies, and data payloads for GET, POST, PUT, DELETE, and other HTTP methods. Its simplicity and flexibility make it a favorite for developers and system administrators for debugging and automation. We will harness its capabilities to send the result of grype back to our api through the `ApiServiceHostname`
 
-The `internal/service/job.template.yaml` is parsed as a go template so that certain paramaters like ScanName, Namespace can dynamically changed. Here we are making use of the ttlSecondsAfterFinished property of jobs. It specifies the time-to-live (TTL) for the resource after it completes execution. Once the job finishes, Kubernetes waits for the defined TTL (in seconds) before automatically deleting the resource, helping to clean up old, unused jobs. This property is particularly useful for managing resource lifecycle and avoiding clutter in the cluster, but it must be enabled in the cluster settings as it is a feature gate. Using this takes the responsibility of deleting jobs away from our operator, but we can still have a look at what went wrong during the specified time. Once the unsucessful job is not present in the Namespace the Scanner operator schedule it again.
+The `internal/service/job.template.yaml` is parsed as a go template so that certain paramaters like ScanName, Namespace can dynamically changed. Here we are making use of the ttlSecondsAfterFinished property of jobs. It specifies the time-to-live (TTL) for the resource after it completes execution. Once the Job finishes, Kubernetes waits for the defined TTL (in seconds) before automatically deleting the resource, helping to clean up old, unused jobs. This property is particularly useful for managing resource lifecycle and avoiding clutter in the cluster, but it must be enabled in the cluster settings as it is a feature gate. Using this takes the responsibility of deleting Jobs away from our operator, but we can still have a look at what went wrong during the specified time. Once the unsucessful Job is not present in the Namespace the Scanner operator schedule it again.
 
 ```yaml
 # internal/service/job.template.yaml
@@ -1195,7 +1197,7 @@ nodes:
 
 ### HTTP Handlers
 
-The server package contains the implementation of handlers and Server struct which fits the interface generated by `oapi-codegen`, thereby fitting the schema defined in `internal/oapi/oapi_definition.yaml`. The next snippet defines a NewServer function that initializes and returns a new Server instance for handling scan-related operations and broadcasting updates, so that it can notify clients real-time. It creates a broadcastCh channel for transmitting messages and a connections map to track active WebSocket connections and their respective channels. A goroutine is started to continuously listen for messages on broadcastCh and forward them to all connected clients by iterating through the connections map. The Server is returned with initialized fields, including a WebSocket upgrader, the provided scanService for business logic, and a mutex (mu) for thread-safe access to shared resources.
+The server package contains the implementation of handlers and Server struct which fits the interface generated by `oapi-codegen`, thereby fitting the schema defined in `internal/oapi/oapi_definition.yaml`. The next snippet defines a NewServer function that initializes and returns a new Server instance for handling scan-related operations and broadcasting updates, so that it can notify clients real-time. It creates a broadcast channel for transmitting messages and a connections map to track active WebSocket connections and their respective channels. A goroutine is started to continuously listen for messages on `broadcastCh` and forward them to all connected clients by iterating through the connections map. The Server is returned with initialized fields, including a WebSocket upgrader, the provided `scanService` for business logic, and a mutex (mu) for thread-safe access to shared resources.
 
 ```go
 // internal/server/server.go
@@ -1333,7 +1335,7 @@ type ScanResult struct {
 }
 ```
 
-The next code snippet defines the UpsertScanResult method, which processes a scan report and stores or updates it in the database. It first decodes the provided report string into a cyclonedx.BOM object using a JSON decoder, validating that the report is in a proper CycloneDX BOM format. If decoding fails, the method returns an error indicating an invalid BOM. A ScanResult object is created with the given imageId and report, which is then upserted into the database using an ON CONFLICT clause to update existing records if a conflict occurs. If the database operation fails, the method returns an error detailing the issue. Upon success, the newly created or updated ScanResult is returned to the caller.
+The next code snippet defines the `UpsertScanResult` method, which processes a scan report and stores or updates it in the database. It first decodes the provided report string into a cyclonedx.BOM object using a JSON decoder, validating that the report is in a proper CycloneDX BOM format. If decoding fails, the method returns an error indicating an invalid BOM. A ScanResult object is created with the given imageId and report, which is then upserted into the database using an ON CONFLICT clause to update existing records if a conflict occurs. If the database operation fails, the method returns an error detailing the issue. Upon success, the newly created or updated ScanResult is returned to the caller.
 
 ```go
 // internal/service/scan.go
@@ -1576,7 +1578,7 @@ The following image shows the finished UI, where the scanner resource was instal
 
 ### Manual Flow
 
-During development we can make our job a lot more easier by automating what we can. Makefiles can be used for such purposes too, so we defined a `make cycle` commands which tears down the cluster if it was set up, then recreates it, builds frontend code, starts the postgres database, builds the docker image of the operator, loads the newly buildt image into the kind cluster, deploys the prometheus chart, then lastly deploys the helm chart and applies a scanner resource in the default namespace.
+During development we can make our Job a lot more easier by automating what we can. Makefiles can be used for such purposes too, so we defined a `make cycle` commands which tears down the cluster if it was set up, then recreates it, builds frontend code, starts the postgres database, builds the docker image of the operator, loads the newly buildt image into the kind cluster, deploys the prometheus chart, then lastly deploys the helm chart and applies a scanner resource in the default namespace.
 
 ```makefile
 .PHONY: cycle
