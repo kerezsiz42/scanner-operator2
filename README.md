@@ -876,7 +876,7 @@ In this chapter, we will review the main parts of the implemented operator and e
 
 ### The Main Function
 
-At the start we have put some initializing logic into the `Reconcile()` method which is not the best place such cases since the `cmd/main.go` is the actual function that sets up the `ScannerReconciler` struct with the manager. Doing it this way the expressions do not have to be guarded by if statements of `sync.Once` constructs. Here we create a new `JobObjectService` connect to the database and pass the database reference to the newly created `ScanService`. The reconciler will need references of both services in order to list scanned images and launch new scans.
+At the start, we have put some initializing logic into the `Reconcile()` method which is not the best place such cases since the `cmd/main.go` is the actual function that sets up the `ScannerReconciler` struct with the manager. Doing it this way the expressions do not have to be guarded by if statements of `sync.Once` constructs. Here we create a new `JobObjectService` connect to the database and pass the database reference to the newly created `ScanService`. The reconciler will need references of both services in order to list scanned images and launch new scans.
 
 ```go
 // cmd/main.go within the main function
